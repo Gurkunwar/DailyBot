@@ -11,9 +11,9 @@ import (
 )
 
 type StandupService struct {
-	DB *gorm.DB
-	Session *discordgo.Session
-	TriggerFunc func(s *discordgo.Session, userID, guildID string)
+	DB          *gorm.DB
+	Session     *discordgo.Session
+	TriggerFunc func(s *discordgo.Session, userID, guildID string, standupID uint)
 }
 
 func (s *StandupService) StartTimezoneWorker() {
@@ -26,30 +26,38 @@ func (s *StandupService) StartTimezoneWorker() {
 }
 
 func (s *StandupService) CheckAndTriggerStandups() {
-	var users []models.UserProfile
-	s.DB.Find(&users)
+	var standups []models.Standup
+	s.DB.Preload("Participants").Find(&standups)
 
-	for _, user := range users {
-		if user.Timezone == "" || user.PrimaryGuildID == "" {
-			continue
-		}
+	for _, standup := range standups {
+		for _, user := range standup.Participants {
+			if user.Timezone == "" {
+				continue
+			}
 
-		loc, err := time.LoadLocation(user.Timezone)
-		if err != nil {
-			continue
-		}
+			loc, err := time.LoadLocation(user.Timezone)
+			if err != nil {
+				continue
+			}
 
-		userLocalTime := time.Now().In(loc)
-		today := userLocalTime.Format("2006-01-02")
+			userLocalTime := time.Now().In(loc)
+			today := userLocalTime.Format("2006-01-02")
 
-		if userLocalTime.Hour() == 10 && userLocalTime.Minute() == 7 {
-			var history models.StandupHistory
-			result := s.DB.Where("user_id = ? AND date = ?", user.UserID, today).First(&history)
+			if userLocalTime.Hour() == 10 && userLocalTime.Minute() == 7 {
+				var history models.StandupHistory
+				result := s.DB.Where("user_id = ? AND standup_id = ? AND date = ?", user.UserID, standup.ID, today).
+							First(&history)
 
-			if result.Error != nil {
-				log.Printf("Triggering 9AM standup for user: %s", user.UserID)
-				s.TriggerFunc(s.Session, user.UserID, user.PrimaryGuildID)
-				s.DB.Create(&models.StandupHistory{UserID: user.UserID, Date: today})
+				if result.Error != nil {
+                    log.Printf("Triggering standup '%s' for user: %s", standup.Name, user.UserID)
+                    s.TriggerFunc(s.Session, user.UserID, standup.GuildID, standup.ID)
+                    
+                    s.DB.Create(&models.StandupHistory{
+                        UserID:    user.UserID,
+                        StandupID: standup.ID,
+                        Date:      today,
+                    })
+                }
 			}
 		}
 	}

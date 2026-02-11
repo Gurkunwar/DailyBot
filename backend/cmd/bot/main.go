@@ -10,6 +10,7 @@ import (
 	"github.com/Gurkunwar/dailybot/internal/database"
 	"github.com/Gurkunwar/dailybot/internal/services"
 	"github.com/Gurkunwar/dailybot/internal/store"
+	"github.com/bwmarrin/discordgo"
 	"github.com/joho/godotenv"
 )
 
@@ -30,7 +31,9 @@ func main() {
 	standupSvc := &services.StandupService{
 		DB:          db,
         Session:     dg,
-        TriggerFunc: handler.InitiateStandup,
+        TriggerFunc: func(s *discordgo.Session, userID string, guildID string, standupID uint) {
+             handler.InitiateStandup(s, userID, guildID, standupID)
+        },
 	}
 
 	standupSvc.StartTimezoneWorker()

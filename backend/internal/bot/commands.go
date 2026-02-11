@@ -29,7 +29,31 @@ var Commands = []*discordgo.ApplicationCommand{
 				Name:        "channel",
 				Description: "The channel to send reports to",
 				Required:    true,
-			},	
+			},
+		},
+	},
+	{
+		Name:        "create-standup",
+		Description: "Create a new team standup (Admin only)",
+		Options: []*discordgo.ApplicationCommandOption{
+			{
+				Type:        discordgo.ApplicationCommandOptionString,
+				Name:        "name",
+				Description: "Team name (e.g., Backend, Frontend)",
+				Required:    true,
+			},
+			{
+				Type:        discordgo.ApplicationCommandOptionChannel,
+				Name:        "channel",
+				Description: "Where reports should be posted",
+				Required:    true,
+			},
+			{
+				Type:        discordgo.ApplicationCommandOptionString,
+				Name:        "questions",
+				Description: "Questions separated by a semicolon (;)",
+				Required:    true,
+			},
 		},
 	},
 }
@@ -37,16 +61,28 @@ var Commands = []*discordgo.ApplicationCommand{
 func (h *BotHanlder) handleSetChannel(session *discordgo.Session, intr *discordgo.InteractionCreate) {
 	options := intr.ApplicationCommandData().Options
 	targetChannelID := options[0].Value.(string)
+	standupName := options[1].Value.(string)
 
-	var guild models.Guild
-	h.DB.Where(&models.Guild{GuildID: intr.GuildID}).FirstOrCreate(&guild)
-	guild.ReportChannelID = targetChannelID
-	h.DB.Save(&guild)
+	var standup models.Standup
+    result := h.DB.Where("guild_id = ? AND name = ?", intr.GuildID, standupName).First(&standup)
+    
+    if result.Error != nil {
+        session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
+            Type: discordgo.InteractionResponseChannelMessageWithSource,
+            Data: &discordgo.InteractionResponseData{
+                Content: "❌ Standup not found. Create it first with `/create-standup`.",
+            },
+        })
+        return
+    }
 
-	session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
+    standup.ReportChannelID = targetChannelID
+    h.DB.Save(&standup)
+
+    session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
         Type: discordgo.InteractionResponseChannelMessageWithSource,
         Data: &discordgo.InteractionResponseData{
-            Content: fmt.Sprintf("✅ Success! Daily reports will now be sent to <#%s>", targetChannelID),
+            Content: fmt.Sprintf("✅ Reports for **%s** will now be sent to <#%s>", standup.Name, targetChannelID),
         },
     })
 }
@@ -59,20 +95,22 @@ func (h *BotHanlder) handleHelp(session *discordgo.Session, intr *discordgo.Inte
 		"Note: I will automatically ping you at 9:00 AM in your saved timezone!"
 
 	session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
-        Type: discordgo.InteractionResponseChannelMessageWithSource,
-        Data: &discordgo.InteractionResponseData{
-            Content: helpText,
-            Flags:   discordgo.MessageFlagsEphemeral,
-        },
-    })
+		Type: discordgo.InteractionResponseChannelMessageWithSource,
+		Data: &discordgo.InteractionResponseData{
+			Content: helpText,
+			Flags:   discordgo.MessageFlagsEphemeral,
+		},
+	})
 }
 
 func (h *BotHanlder) handleReset(session *discordgo.Session, intr *discordgo.InteractionCreate) {
-	userID := intr.User.ID
+	var userID string
     if intr.Member != nil {
         userID = intr.Member.User.ID
+    } else {
+        userID = intr.User.ID
     }
-	
+
 	result := h.DB.Where("user_id = ?", userID).Delete(&models.UserProfile{})
 
 	if result.Error != nil {
@@ -81,10 +119,10 @@ func (h *BotHanlder) handleReset(session *discordgo.Session, intr *discordgo.Int
 	}
 
 	session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
-        Type: discordgo.InteractionResponseChannelMessageWithSource,
-        Data: &discordgo.InteractionResponseData{
-            Content: "✅ Profile reset! Use `/start` to set your new timezone.",
-            Flags:   discordgo.MessageFlagsEphemeral,
-        },
-    })
+		Type: discordgo.InteractionResponseChannelMessageWithSource,
+		Data: &discordgo.InteractionResponseData{
+			Content: "✅ Profile reset! Use `/start` to set your new timezone.",
+			Flags:   discordgo.MessageFlagsEphemeral,
+		},
+	})
 }

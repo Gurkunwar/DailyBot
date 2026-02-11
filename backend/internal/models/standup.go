@@ -12,4 +12,6 @@ type Standup struct {
 	ManagerID       string
 	ReportChannelID string
 	Questions       pq.StringArray `gorm:"type:text[]"`
+	Time            string         `default:"09:00"`
+	Participants    []UserProfile  `gorm:"many2many:standup_participants;"`
 }
