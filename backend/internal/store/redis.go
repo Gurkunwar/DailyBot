@@ -3,11 +3,30 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"os"
 	"time"
 
 	"github.com/Gurkunwar/dailybot/internal/models"
 	"github.com/redis/go-redis/v9"
 )
+
+func InitRedis() (*redis.Client, error) {
+	addr := os.Getenv("REDIS_URL")
+	if addr == "" {
+		addr = "localhost:6379"
+	}
+
+	rdb := redis.NewClient(&redis.Options{
+		Addr: addr,
+	})
+
+	err := rdb.Ping(context.Background()).Err()
+	if err != nil {
+		return nil, err
+	}
+
+	return rdb, nil
+}
 
 func SaveState(rdb *redis.Client, userID string, state models.StandupState) {
 	data, _ := json.Marshal(state)

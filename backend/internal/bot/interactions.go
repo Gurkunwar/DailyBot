@@ -13,6 +13,9 @@ import (
 func (h *BotHanlder) handleTimezoneSelection(session *discordgo.Session, intr *discordgo.InteractionCreate) {
 	selectedTZ := intr.MessageComponentData().Values[0]
 	userID := intr.User.ID
+	if userID == "" && intr.Member != nil {
+        userID = intr.Member.User.ID
+    }
 
 	var profile models.UserProfile
 	h.DB.Where(models.UserProfile{UserID: userID}).FirstOrCreate(&profile)
@@ -41,13 +44,32 @@ func (h *BotHanlder) handleTimezoneSelection(session *discordgo.Session, intr *d
 
 func (h *BotHanlder) OnInteraction(session *discordgo.Session, intr *discordgo.InteractionCreate) {
 	switch intr.Type {
+	case discordgo.InteractionApplicationCommand:
+		data := intr.ApplicationCommandData()
+		switch data.Name {
+		case "start":
+			h.InitiateStandup(session, intr.Member.User.ID, intr.GuildID)
+			session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
+				Type: discordgo.InteractionResponseChannelMessageWithSource,
+				Data: &discordgo.InteractionResponseData{
+					Content: "Standup started!",
+					Flags:   discordgo.MessageFlagsEphemeral,
+				},
+			})
+		case "help":
+			h.handleHelp(session, intr)
+		case "reset":
+			h.handleReset(session, intr)
+		case "set-channel":
+			h.handleSetChannel(session, intr)
+		}
 	case discordgo.InteractionMessageComponent:
-        if intr.MessageComponentData().CustomID == "open_standup_modal" {
-            h.openStandupModal(session, intr)
-        }
-        if intr.MessageComponentData().CustomID == "select_tz" {
-            h.handleTimezoneSelection(session, intr)
-        }
+		if intr.MessageComponentData().CustomID == "open_standup_modal" {
+			h.openStandupModal(session, intr)
+		}
+		if intr.MessageComponentData().CustomID == "select_tz" {
+			h.handleTimezoneSelection(session, intr)
+		}
 
 	case discordgo.InteractionModalSubmit:
 		h.handleModalSubmit(session, intr)
@@ -55,42 +77,42 @@ func (h *BotHanlder) OnInteraction(session *discordgo.Session, intr *discordgo.I
 }
 
 func (h *BotHanlder) openStandupModal(session *discordgo.Session, intr *discordgo.InteractionCreate) {
-    err := session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
-        Type: discordgo.InteractionResponseModal,
-        Data: &discordgo.InteractionResponseData{
-            CustomID: "standup_modal",
-            Title:    "Daily Standup Form",
-            Components: []discordgo.MessageComponent{
-                discordgo.ActionsRow{Components: []discordgo.MessageComponent{
-                    discordgo.TextInput{
-                        CustomID: "yesterday", Label: "What did you do yesterday?",
-                        Style: discordgo.TextInputParagraph, Required: true,
-                    },
-                }},
-                discordgo.ActionsRow{Components: []discordgo.MessageComponent{
-                    discordgo.TextInput{
-                        CustomID: "today", Label: "What are you planning to do today?",
-                        Style: discordgo.TextInputParagraph, Required: true,
-                    },
-                }},
-                discordgo.ActionsRow{Components: []discordgo.MessageComponent{
-                    discordgo.TextInput{
-                        CustomID: "blockers", Label: "Any blockers in your way?",
-                        Style: discordgo.TextInputParagraph, Value: "None",
-                    },
-                }},
-            },
-        },
-    })
+	err := session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseModal,
+		Data: &discordgo.InteractionResponseData{
+			CustomID: "standup_modal",
+			Title:    "Daily Standup Form",
+			Components: []discordgo.MessageComponent{
+				discordgo.ActionsRow{Components: []discordgo.MessageComponent{
+					discordgo.TextInput{
+						CustomID: "yesterday", Label: "What did you do yesterday?",
+						Style: discordgo.TextInputParagraph, Required: true,
+					},
+				}},
+				discordgo.ActionsRow{Components: []discordgo.MessageComponent{
+					discordgo.TextInput{
+						CustomID: "today", Label: "What are you planning to do today?",
+						Style: discordgo.TextInputParagraph, Required: true,
+					},
+				}},
+				discordgo.ActionsRow{Components: []discordgo.MessageComponent{
+					discordgo.TextInput{
+						CustomID: "blockers", Label: "Any blockers in your way?",
+						Style: discordgo.TextInputParagraph, Value: "None",
+					},
+				}},
+			},
+		},
+	})
 
-    if err != nil {
-        log.Println("Error opening modal:", err)
-    }
+	if err != nil {
+		log.Println("Error opening modal:", err)
+	}
 }
 
 func (h *BotHanlder) handleModalSubmit(session *discordgo.Session, intr *discordgo.InteractionCreate) {
 	data := intr.ModalSubmitData()
-	
+
 	yesterday := data.Components[0].(*discordgo.ActionsRow).Components[0].(*discordgo.TextInput).Value
 	today := data.Components[1].(*discordgo.ActionsRow).Components[0].(*discordgo.TextInput).Value
 	blockers := data.Components[2].(*discordgo.ActionsRow).Components[0].(*discordgo.TextInput).Value
@@ -115,5 +137,5 @@ func (h *BotHanlder) handleModalSubmit(session *discordgo.Session, intr *discord
 	}
 
 	h.finalizeStandup(session, state)
-	h.Redis.Del(context.Background(), "state:" + intr.User.ID)
+	h.Redis.Del(context.Background(), "state:"+intr.User.ID)
 }
