@@ -12,67 +12,56 @@ import (
 )
 
 func (h *BotHanlder) InitiateStandup(s *discordgo.Session, userID string, guildID string, standupID uint) {
-    var profile models.UserProfile
-    // 1. Find or Create the User
-    h.DB.Unscoped().Preload("Standups").Where("user_id = ?", userID).First(&profile)
+	var profile models.UserProfile
+	// 1. Fetch User and their PRE-APPROVED Standups
+	h.DB.Unscoped().Preload("Standups").Where("user_id = ?", userID).First(&profile)
 
-    if profile.ID == 0 {
-        profile.UserID = userID
-        h.DB.Create(&profile)
-    } else if profile.DeletedAt.Valid {
-        h.DB.Model(&profile).Unscoped().Update("deleted_at", nil)
-    }
+	// Revive if deleted
+	if profile.ID != 0 && profile.DeletedAt.Valid {
+		h.DB.Model(&profile).Unscoped().Update("deleted_at", nil)
+	}
 
-    var targetStandup models.Standup
+	if profile.ID == 0 || len(profile.Standups) == 0 {
+		s.ChannelMessageSend(userID,
+			"⛔ You are not part of any standups yet. Please ask your manager to add you.")
+		return
+	}
 
-    // Case A: Automated Worker OR Selected from Menu (Specific ID provided)
-    if standupID != 0 {
-        if err := h.DB.First(&targetStandup, standupID).Error; err != nil {
-            return 
-        }
-    } else {
-        // Case B: Manual /start command
-        // Instead of checking what they joined, check what is AVAILABLE in the guild
-        var guildStandups []models.Standup
-        h.DB.Where("guild_id = ?", guildID).Find(&guildStandups)
+	var targetStandup models.Standup
 
-        if len(guildStandups) == 0 {
-            s.ChannelMessageSend(userID, "⚠️ No standups found in this server. Admin needs to run `/create-standup`.")
-            return
-        } else if len(guildStandups) == 1 {
-            // Only 1 option? Auto-select it.
-            targetStandup = guildStandups[0]
-            
-            // Auto-join them if they aren't linked yet
-            joined := false
-            for _, s := range profile.Standups {
-                if s.ID == targetStandup.ID {
-                    joined = true
-                    break
-                }
-            }
-            if !joined {
-                 h.DB.Model(&profile).Association("Standups").Append(&targetStandup)
-            }
-        } else {
-            // More than 1 option exists? ALWAYS show the menu.
-            h.sendStandupSelectionMenu(s, userID, guildID, guildStandups)
-            return
-        }
-    }
+	if standupID != 0 {
+		isMember := false
+		for _, st := range profile.Standups {
+			if st.ID == standupID {
+				targetStandup = st
+				isMember = true
+				break
+			}
+		}
+		if !isMember {
+			return
+		}
+	} else {
+		if len(profile.Standups) == 1 {
+			targetStandup = profile.Standups[0]
+		} else {
+			h.sendStandupSelectionMenu(s, userID, guildID, profile.Standups)
+			return
+		}
+	}
 
-    if targetStandup.ReportChannelID == "" {
-        s.ChannelMessageSend(userID, "⚠️ This standup has no report channel set.")
-        return
-    }
+	if targetStandup.ReportChannelID == "" {
+		s.ChannelMessageSend(userID, "⚠️ This standup has no report channel set.")
+		return
+	}
 
-    channel, _ := s.UserChannelCreate(userID)
-    if profile.Timezone == "" || profile.Timezone == "UTC" {
-        h.sendTimezoneMenu(s, channel.ID, userID, targetStandup.ID)
-        return
-    }
+	channel, _ := s.UserChannelCreate(userID)
+	if profile.Timezone == "" || profile.Timezone == "UTC" {
+		h.sendTimezoneMenu(s, channel.ID, userID, targetStandup.ID)
+		return
+	}
 
-    h.startQuestionFlow(s, channel.ID, userID, targetStandup)
+	h.startQuestionFlow(s, channel.ID, userID, targetStandup)
 }
 
 func (h *BotHanlder) finalizeStandup(s *discordgo.Session, state *models.StandupState) {
@@ -114,8 +103,13 @@ func (h *BotHanlder) handleCreateStandup(s *discordgo.Session, i *discordgo.Inte
 	name := options[0].StringValue()
 	channelID := options[1].ChannelValue(s).ID
 	questionsRaw := options[2].StringValue()
+	membersRaw := options[3].StringValue()
+	standupTime := "9:00"
 
-	// Split questions by semicolon
+	if len(options) > 4 {
+		standupTime = options[4].StringValue()
+	}
+
 	questions := strings.Split(questionsRaw, ";")
 
 	standup := models.Standup{
@@ -124,6 +118,7 @@ func (h *BotHanlder) handleCreateStandup(s *discordgo.Session, i *discordgo.Inte
 		ManagerID:       i.Member.User.ID,
 		ReportChannelID: channelID,
 		Questions:       questions,
+		Time:            standupTime,
 	}
 
 	if err := h.DB.Create(&standup).Error; err != nil {
@@ -134,10 +129,37 @@ func (h *BotHanlder) handleCreateStandup(s *discordgo.Session, i *discordgo.Inte
 		return
 	}
 
+	members := strings.Fields(membersRaw)
+	addedCount := 0
+
+	for _, member := range members {
+		if strings.HasPrefix(member, "<@") && strings.HasSuffix(member, ">") {
+			userID := strings.Trim(member, "<@!>")
+
+			var user models.UserProfile
+			h.DB.FirstOrCreate(&user, models.UserProfile{UserID: userID})
+			h.DB.Model(&user).Association("Standups").Append(&standup)
+			addedCount++
+
+			dmChannel, err := s.UserChannelCreate(userID)
+			if err == nil {
+				welcomeMsg := fmt.Sprintf(
+					"👋 **You've been added to the '%s' Standup!**\n\n"+
+						"You can now submit your daily reports for this team.\n"+
+						"Run `/start` here or in the server to begin.",
+					name,
+				)
+				s.ChannelMessageSend(dmChannel.ID, welcomeMsg)
+			} else {
+				fmt.Printf("Could not DM user %s: %v\n", userID, err)
+			}
+		}
+	}
+
 	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseChannelMessageWithSource,
 		Data: &discordgo.InteractionResponseData{
-			Content: fmt.Sprintf("✅ Standup **%s** created! Users can now join using ID: `%d`", name, standup.ID),
+			Content: fmt.Sprintf("✅ Standup **%s** created with **%d** members!", name, addedCount),
 		},
 	})
 }
@@ -200,55 +222,55 @@ func (h *BotHanlder) startQuestionFlow(session *discordgo.Session, channelID, us
 }
 
 func (h *BotHanlder) sendStandupSelectionMenu(s *discordgo.Session, userID, guildID string, standups []models.Standup) {
-    channel, _ := s.UserChannelCreate(userID)
-    
-    var options []discordgo.SelectMenuOption
-    for _, st := range standups {
-        options = append(options, discordgo.SelectMenuOption{
-            Label:       st.Name,
-            Value:       fmt.Sprintf("%d", st.ID),
-            Description: fmt.Sprintf("ID: %d", st.ID),
-        })
-    }
+	channel, _ := s.UserChannelCreate(userID)
 
-    s.ChannelMessageSendComplex(channel.ID, &discordgo.MessageSend{
-        Content: "found multiple standups in this server. Please select one:",
-        Components: []discordgo.MessageComponent{
-            discordgo.ActionsRow{
-                Components: []discordgo.MessageComponent{
-                    discordgo.SelectMenu{
-                        CustomID:    "select_standup_join",
-                        Placeholder: "Choose a standup to join...",
-                        Options:     options,
-                    },
-                },
-            },
-        },
-    })
+	var options []discordgo.SelectMenuOption
+	for _, st := range standups {
+		options = append(options, discordgo.SelectMenuOption{
+			Label:       st.Name,
+			Value:       fmt.Sprintf("%d", st.ID),
+			Description: fmt.Sprintf("ID: %d", st.ID),
+		})
+	}
+
+	s.ChannelMessageSendComplex(channel.ID, &discordgo.MessageSend{
+		Content: "found multiple standups in this server. Please select one:",
+		Components: []discordgo.MessageComponent{
+			discordgo.ActionsRow{
+				Components: []discordgo.MessageComponent{
+					discordgo.SelectMenu{
+						CustomID:    "select_standup_join",
+						Placeholder: "Choose a standup to join...",
+						Options:     options,
+					},
+				},
+			},
+		},
+	})
 }
 
 func (h *BotHanlder) handleStandupSelection(session *discordgo.Session, intr *discordgo.InteractionCreate) {
-    // 1. Parse the selected Standup ID
-    selectedID := intr.MessageComponentData().Values[0] // e.g., "1"
-    
-    // 2. Link the user to this standup
-    var standup models.Standup
-    h.DB.First(&standup, selectedID)
+	// 1. Parse the selected Standup ID
+	selectedID := intr.MessageComponentData().Values[0] // e.g., "1"
 
-    var user models.UserProfile
-    h.DB.Preload("Standups").Where("user_id = ?", intr.User.ID).First(&user)
+	// 2. Link the user to this standup
+	var standup models.Standup
+	h.DB.First(&standup, selectedID)
 
-    // Add to participants list
-    h.DB.Model(&user).Association("Standups").Append(&standup)
+	var user models.UserProfile
+	h.DB.Preload("Standups").Where("user_id = ?", intr.User.ID).First(&user)
 
-    // 3. Acknowledge and Start
-    session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
-        Type: discordgo.InteractionResponseUpdateMessage,
-        Data: &discordgo.InteractionResponseData{
-            Content:    fmt.Sprintf("✅ You joined **%s**!", standup.Name),
-            Components: []discordgo.MessageComponent{}, // Remove the dropdown
-        },
-    })
+	// Add to participants list
+	h.DB.Model(&user).Association("Standups").Append(&standup)
 
-    h.InitiateStandup(session, intr.User.ID, standup.GuildID, standup.ID)
+	// 3. Acknowledge and Start
+	session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseUpdateMessage,
+		Data: &discordgo.InteractionResponseData{
+			Content:    fmt.Sprintf("✅ You joined **%s**!", standup.Name),
+			Components: []discordgo.MessageComponent{}, // Remove the dropdown
+		},
+	})
+
+	h.InitiateStandup(session, intr.User.ID, standup.GuildID, standup.ID)
 }

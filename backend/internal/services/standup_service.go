@@ -1,6 +1,7 @@
 package services
 
 import (
+	"fmt"
 	"log"
 	"time"
 	_ "time/tzdata"
@@ -26,39 +27,48 @@ func (s *StandupService) StartTimezoneWorker() {
 }
 
 func (s *StandupService) CheckAndTriggerStandups() {
-	var standups []models.Standup
-	s.DB.Preload("Participants").Find(&standups)
+    var standups []models.Standup
 
-	for _, standup := range standups {
-		for _, user := range standup.Participants {
-			if user.Timezone == "" {
-				continue
-			}
+    if err := s.DB.Preload("Participants").Find(&standups).Error; err != nil {
+        log.Println("Error fetching standups:", err)
+        return
+    }
 
-			loc, err := time.LoadLocation(user.Timezone)
-			if err != nil {
-				continue
-			}
+    for _, standup := range standups {
+		var targetHour, targetMinute int
+        _, err := fmt.Sscanf(standup.Time, "%d:%d", &targetHour, &targetMinute)
+        if err != nil {
+            log.Printf("Invalid time format for standup %s: %s", standup.Name, standup.Time)
+            continue
+        }
 
-			userLocalTime := time.Now().In(loc)
-			today := userLocalTime.Format("2006-01-02")
+        for _, user := range standup.Participants {
+            if user.Timezone == "" {
+                continue
+            }
 
-			if userLocalTime.Hour() == 10 && userLocalTime.Minute() == 7 {
-				var history models.StandupHistory
-				result := s.DB.Where("user_id = ? AND standup_id = ? AND date = ?", user.UserID, standup.ID, today).
-							First(&history)
+            loc, err := time.LoadLocation(user.Timezone)
+            if err != nil {
+                continue
+            }
+            userLocalTime := time.Now().In(loc)
+            
+            if userLocalTime.Hour() == targetHour && userLocalTime.Minute() == targetMinute {
+                today := userLocalTime.Format("2006-01-02")
+                var history models.StandupHistory
+                result := s.DB.Where("user_id = ? AND standup_id = ? AND date = ?",
+				 user.UserID, standup.ID, today).First(&history)
 
-				if result.Error != nil {
-                    log.Printf("Triggering standup '%s' for user: %s", standup.Name, user.UserID)
-                    s.TriggerFunc(s.Session, user.UserID, standup.GuildID, standup.ID)
-                    
-                    s.DB.Create(&models.StandupHistory{
-                        UserID:    user.UserID,
-                        StandupID: standup.ID,
-                        Date:      today,
-                    })
+                if result.Error != nil {
+                    log.Printf("🔔 Pinging %s for standup: %s", user.UserID, standup.Name)
+                    channel, err := s.Session.UserChannelCreate(user.UserID)
+                    if err == nil {
+                        s.Session.ChannelMessageSend(channel.ID, 
+							fmt.Sprintf("🔔 **Good Morning!** It's time for your **%s** standup.", standup.Name))
+                        s.TriggerFunc(s.Session, user.UserID, standup.GuildID, standup.ID)
+                    }
                 }
-			}
-		}
-	}
+            }
+        }
+    }
 }

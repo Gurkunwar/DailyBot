@@ -37,7 +37,7 @@ func (h *BotHanlder) handleTimezoneSelection(session *discordgo.Session, intr *d
 	})
 
 	var standup models.Standup
-    h.DB.First(&standup, state.StandupID)
+	h.DB.First(&standup, state.StandupID)
 
 	state.CurrentStep = 0
 	store.SaveState(h.Redis, userID, *state)
@@ -77,13 +77,13 @@ func (h *BotHanlder) OnInteraction(session *discordgo.Session, intr *discordgo.I
 		}
 	case discordgo.InteractionMessageComponent:
 		switch intr.MessageComponentData().CustomID {
-        case "open_standup_modal":
-            h.openStandupModal(session, intr)
-        case "select_tz":
-            h.handleTimezoneSelection(session, intr)
-        case "select_standup_join":
-            h.handleStandupSelection(session, intr)
-        }
+		case "open_standup_modal":
+			h.openStandupModal(session, intr)
+		case "select_tz":
+			h.handleTimezoneSelection(session, intr)
+		case "select_standup_join":
+			h.handleStandupSelection(session, intr)
+		}
 	case discordgo.InteractionModalSubmit:
 		h.handleModalSubmit(session, intr)
 	}
@@ -91,48 +91,41 @@ func (h *BotHanlder) OnInteraction(session *discordgo.Session, intr *discordgo.I
 
 func (h *BotHanlder) openStandupModal(session *discordgo.Session, intr *discordgo.InteractionCreate) {
 	state, err := store.GetState(h.Redis, intr.User.ID)
-    if err != nil {
-        return
-    }
-
-	var userID string
-	if intr.Member != nil {
-		userID = intr.Member.User.ID
-	} else {
-		userID = intr.User.ID
+	if err != nil {
+		return
 	}
 
-	var profile models.UserProfile
-	h.DB.Where("user_id = ?", userID).First(&profile)
-
 	var standup models.Standup
-    h.DB.First(&standup, state.StandupID)
+	if err := h.DB.First(&standup, state.StandupID).Error; err != nil {
+		log.Println("Error fetching standup for modal:", err)
+		return
+	}
+
+	var components []discordgo.MessageComponent
+	for i, question := range standup.Questions {
+		if i >= 5 {
+			break
+		}
+
+		components = append(components, discordgo.ActionsRow{
+			Components: []discordgo.MessageComponent{
+				discordgo.TextInput{
+					CustomID:    fmt.Sprintf("answer_%d", i),
+					Label:       question,
+					Style:       discordgo.TextInputParagraph,
+					Required:    true,
+					Placeholder: "Type your answer here...",
+				},
+			},
+		})
+	}
 
 	err = session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseModal,
 		Data: &discordgo.InteractionResponseData{
-			CustomID: "standup_modal",
-			Title:    "Daily Standup Form",
-			Components: []discordgo.MessageComponent{
-				discordgo.ActionsRow{Components: []discordgo.MessageComponent{
-					discordgo.TextInput{
-						CustomID: "yesterday", Label: "What did you do yesterday?",
-						Style: discordgo.TextInputParagraph, Required: true,
-					},
-				}},
-				discordgo.ActionsRow{Components: []discordgo.MessageComponent{
-					discordgo.TextInput{
-						CustomID: "today", Label: "What are you planning to do today?",
-						Style: discordgo.TextInputParagraph, Required: true,
-					},
-				}},
-				discordgo.ActionsRow{Components: []discordgo.MessageComponent{
-					discordgo.TextInput{
-						CustomID: "blockers", Label: "Any blockers in your way?",
-						Style: discordgo.TextInputParagraph, Value: "None",
-					},
-				}},
-			},
+			CustomID:   "standup_modal",
+			Title:      fmt.Sprintf("%s Submission", standup.Name),
+			Components: components,
 		},
 	})
 
@@ -143,17 +136,22 @@ func (h *BotHanlder) openStandupModal(session *discordgo.Session, intr *discordg
 
 func (h *BotHanlder) handleModalSubmit(session *discordgo.Session, intr *discordgo.InteractionCreate) {
 	data := intr.ModalSubmitData()
+	var answers []string
 
-	yesterday := data.Components[0].(*discordgo.ActionsRow).Components[0].(*discordgo.TextInput).Value
-	today := data.Components[1].(*discordgo.ActionsRow).Components[0].(*discordgo.TextInput).Value
-	blockers := data.Components[2].(*discordgo.ActionsRow).Components[0].(*discordgo.TextInput).Value
+	for _, comp := range data.Components {
+		if row, ok := comp.(*discordgo.ActionsRow); ok {
+			if textInput, ok := row.Components[0].(*discordgo.TextInput); ok {
+				answers = append(answers, textInput.Value)
+			}
+		}
+	}
 
 	state, err := store.GetState(h.Redis, intr.User.ID)
 	if err != nil {
 		log.Println("Error retrieving state from Redis:", err)
 		return
 	}
-	state.Answers = []string{yesterday, today, blockers}
+	state.Answers = answers
 
 	session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseChannelMessageWithSource,

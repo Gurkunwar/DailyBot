@@ -54,6 +54,18 @@ var Commands = []*discordgo.ApplicationCommand{
 				Description: "Questions separated by a semicolon (;)",
 				Required:    true,
 			},
+			{
+                Type:        discordgo.ApplicationCommandOptionString,
+                Name:        "members",
+                Description: "Tag the members to add (e.g. @User1 @User2)",
+                Required:    true,
+            },
+			{
+                Type:        discordgo.ApplicationCommandOptionString,
+                Name:        "time",
+                Description: "Time to trigger standup (HH:MM in 24h format, e.g. 09:30)",
+                Required:    false,
+            },
 		},
 	},
 }
