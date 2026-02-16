@@ -11,17 +11,18 @@ import (
 	"github.com/bwmarrin/discordgo"
 )
 
-func (h *BotHanlder) InitiateStandup(s *discordgo.Session, userID string, guildID string, standupID uint) {
+func (h *BotHanlder) InitiateStandup(s *discordgo.Session, userID string, guildID, channelID string, standupID uint) {
 	var profile models.UserProfile
-	// 1. Fetch User and their PRE-APPROVED Standups
 	h.DB.Unscoped().Preload("Standups").Where("user_id = ?", userID).First(&profile)
 
-	// Revive if deleted
 	if profile.ID != 0 && profile.DeletedAt.Valid {
 		h.DB.Model(&profile).Unscoped().Update("deleted_at", nil)
 	}
 
 	if profile.ID == 0 || len(profile.Standups) == 0 {
+		targetID := channelID
+        if targetID == "" { targetID = userID }
+
 		s.ChannelMessageSend(userID,
 			"⛔ You are not part of any standups yet. Please ask your manager to add you.")
 		return
@@ -45,7 +46,7 @@ func (h *BotHanlder) InitiateStandup(s *discordgo.Session, userID string, guildI
 		if len(profile.Standups) == 1 {
 			targetStandup = profile.Standups[0]
 		} else {
-			h.sendStandupSelectionMenu(s, userID, guildID, profile.Standups)
+			h.sendStandupSelectionMenu(s, userID, guildID, channelID, profile.Standups)
 			return
 		}
 	}
@@ -221,8 +222,12 @@ func (h *BotHanlder) startQuestionFlow(session *discordgo.Session, channelID, us
 	})
 }
 
-func (h *BotHanlder) sendStandupSelectionMenu(s *discordgo.Session, userID, guildID string, standups []models.Standup) {
-	channel, _ := s.UserChannelCreate(userID)
+func (h *BotHanlder) sendStandupSelectionMenu(s *discordgo.Session, userID, guildID, channelID string, standups []models.Standup) {
+	targetChannelID := channelID
+    if targetChannelID == "" {
+        dm, _ := s.UserChannelCreate(userID)
+        targetChannelID = dm.ID
+    }
 
 	var options []discordgo.SelectMenuOption
 	for _, st := range standups {
@@ -233,7 +238,7 @@ func (h *BotHanlder) sendStandupSelectionMenu(s *discordgo.Session, userID, guil
 		})
 	}
 
-	s.ChannelMessageSendComplex(channel.ID, &discordgo.MessageSend{
+	s.ChannelMessageSendComplex(targetChannelID, &discordgo.MessageSend{
 		Content: "found multiple standups in this server. Please select one:",
 		Components: []discordgo.MessageComponent{
 			discordgo.ActionsRow{
@@ -250,27 +255,36 @@ func (h *BotHanlder) sendStandupSelectionMenu(s *discordgo.Session, userID, guil
 }
 
 func (h *BotHanlder) handleStandupSelection(session *discordgo.Session, intr *discordgo.InteractionCreate) {
-	// 1. Parse the selected Standup ID
-	selectedID := intr.MessageComponentData().Values[0] // e.g., "1"
+	var userID string
+    if intr.Member != nil {
+        userID = intr.Member.User.ID
+    } else {
+        userID = intr.User.ID
+    }
 
-	// 2. Link the user to this standup
+	if len(intr.MessageComponentData().Values) == 0 {
+        return
+    }
+	selectedID := intr.MessageComponentData().Values[0]
+
 	var standup models.Standup
 	h.DB.First(&standup, selectedID)
 
 	var user models.UserProfile
-	h.DB.Preload("Standups").Where("user_id = ?", intr.User.ID).First(&user)
+	if err := h.DB.Preload("Standups").Where("user_id = ?", userID).First(&user).Error; err != nil {
+         log.Println("Error finding user:", err)
+         return
+    }
 
-	// Add to participants list
 	h.DB.Model(&user).Association("Standups").Append(&standup)
 
-	// 3. Acknowledge and Start
 	session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseUpdateMessage,
 		Data: &discordgo.InteractionResponseData{
 			Content:    fmt.Sprintf("✅ You joined **%s**!", standup.Name),
-			Components: []discordgo.MessageComponent{}, // Remove the dropdown
+			Components: []discordgo.MessageComponent{},
 		},
 	})
 
-	h.InitiateStandup(session, intr.User.ID, standup.GuildID, standup.ID)
+	h.InitiateStandup(session, userID, standup.GuildID, intr.ChannelID, standup.ID)
 }

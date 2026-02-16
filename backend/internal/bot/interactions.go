@@ -58,7 +58,7 @@ func (h *BotHanlder) OnInteraction(session *discordgo.Session, intr *discordgo.I
 
 		switch data.Name {
 		case "start":
-			h.InitiateStandup(session, userID, intr.GuildID, 0)
+			h.InitiateStandup(session, userID, intr.GuildID, intr.ChannelID, 0)
 			session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
 				Type: discordgo.InteractionResponseChannelMessageWithSource,
 				Data: &discordgo.InteractionResponseData{

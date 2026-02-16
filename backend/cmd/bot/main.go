@@ -32,7 +32,7 @@ func main() {
 		DB:          db,
         Session:     dg,
         TriggerFunc: func(s *discordgo.Session, userID string, guildID string, standupID uint) {
-             handler.InitiateStandup(s, userID, guildID, standupID)
+             handler.InitiateStandup(s, userID, guildID, "", standupID)
         },
 	}
 
