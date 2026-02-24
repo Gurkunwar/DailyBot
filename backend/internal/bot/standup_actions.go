@@ -19,11 +19,15 @@ func (h *BotHanlder) InitiateStandup(s *discordgo.Session, userID string, guildI
 		h.DB.Model(&profile).Unscoped().Update("deleted_at", nil)
 	}
 
-	if profile.ID == 0 || len(profile.Standups) == 0 {
-		targetID := channelID
-        if targetID == "" { targetID = userID }
+	targetChannelID := channelID
+	if targetChannelID == "" {
+		dm, _ := s.UserChannelCreate(userID)
+		targetChannelID = dm.ID
+	}
 
-		s.ChannelMessageSend(userID,
+	if profile.ID == 0 || len(profile.Standups) == 0 {
+
+		s.ChannelMessageSend(targetChannelID,
 			"⛔ You are not part of any standups yet. Please ask your manager to add you.")
 		return
 	}
@@ -52,14 +56,31 @@ func (h *BotHanlder) InitiateStandup(s *discordgo.Session, userID string, guildI
 	}
 
 	if targetStandup.ReportChannelID == "" {
-		s.ChannelMessageSend(userID, "⚠️ This standup has no report channel set.")
+		s.ChannelMessageSend(targetChannelID, "⚠️ This standup has no report channel set.")
 		return
 	}
 
+	if profile.Timezone == "" {
+		newTimezone := "UTC"
+
+		if targetStandup.ManagerID != "" {
+			var manager models.UserProfile
+			if err := h.DB.Where("user_id = ?", targetStandup.ManagerID).First(&manager).Error; err == nil {
+				if manager.Timezone != "" {
+					newTimezone = manager.Timezone
+				}
+			}
+		}
+
+		profile.Timezone = newTimezone
+		h.DB.Save(&profile)
+	}
+
 	channel, _ := s.UserChannelCreate(userID)
-	if profile.Timezone == "" || profile.Timezone == "UTC" {
-		h.sendTimezoneMenu(s, channel.ID, userID, targetStandup.ID)
-		return
+
+	if profile.Timezone == "UTC" {
+		s.ChannelMessageSend(targetChannelID,
+			"ℹ️ *Note: Daily reminders are scheduled in UTC. Use `/timezone` to change.*")
 	}
 
 	h.startQuestionFlow(s, channel.ID, userID, targetStandup)
@@ -165,6 +186,73 @@ func (h *BotHanlder) handleCreateStandup(s *discordgo.Session, i *discordgo.Inte
 	})
 }
 
+func (h *BotHanlder) handleAddMember(session *discordgo.Session, intr *discordgo.InteractionCreate) {
+	options := intr.ApplicationCommandData().Options
+	targetUser := options[0].UserValue(session)
+	targetStandup := options[1].StringValue()
+
+	var standup models.Standup
+	result := h.DB.Where("guild_id = ? and name = ?", intr.GuildID, targetStandup).First(&standup)
+
+	if result.Error != nil {
+		session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
+			Type: discordgo.InteractionResponseChannelMessageWithSource,
+			Data: &discordgo.InteractionResponseData{
+				Content: fmt.Sprintf("❌ Standup named **%s** not found in this server.", targetStandup),
+				Flags:   discordgo.MessageFlagsEphemeral,
+			},
+		})
+		return
+	}
+
+	if standup.ManagerID != intr.Member.User.ID {
+		session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
+			Type: discordgo.InteractionResponseChannelMessageWithSource,
+			Data: &discordgo.InteractionResponseData{
+				Content: "⛔ You are not the manager of this standup.",
+				Flags:   discordgo.MessageFlagsEphemeral,
+			},
+		})
+		return
+	}
+
+	var userProfile models.UserProfile
+	h.DB.Unscoped().
+		Where("user_id = ?", targetUser.ID).
+		FirstOrCreate(&userProfile, models.UserProfile{UserID: targetUser.ID})
+
+	if userProfile.DeletedAt.Valid {
+        h.DB.Model(&userProfile).Unscoped().Update("deleted_at", nil)
+    }
+
+	err := h.DB.Model(&userProfile).Association("Standups").Append(&standup)
+	if err != nil {
+		session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
+			Type: discordgo.InteractionResponseChannelMessageWithSource,
+            Data: &discordgo.InteractionResponseData{
+                Content: "❌ Failed to link member to the standup team in the database.",
+                Flags:   discordgo.MessageFlagsEphemeral,
+            },
+		})
+		return
+	}
+
+	session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
+        Type: discordgo.InteractionResponseChannelMessageWithSource,
+        Data: &discordgo.InteractionResponseData{
+            Content: fmt.Sprintf("✅ <@%s> has been added to **%s**!", targetUser.ID, standup.Name),
+        },
+    })
+
+	dmChannel, err := session.UserChannelCreate(targetUser.ID)
+    if err == nil {
+        session.ChannelMessageSend(dmChannel.ID, fmt.Sprintf(
+            `👋 You've been added to the **%s** standup by your manager.
+			\nRun "/start" in the server to submit your daily report.`, 
+            standup.Name))
+    }
+}
+
 func (h *BotHanlder) sendTimezoneMenu(s *discordgo.Session, channelID, userID string, standupID uint) {
 	state := models.StandupState{
 		UserID:      userID,
@@ -222,12 +310,15 @@ func (h *BotHanlder) startQuestionFlow(session *discordgo.Session, channelID, us
 	})
 }
 
-func (h *BotHanlder) sendStandupSelectionMenu(s *discordgo.Session, userID, guildID, channelID string, standups []models.Standup) {
+func (h *BotHanlder) sendStandupSelectionMenu(s *discordgo.Session,
+	userID,
+	guildID, channelID string,
+	standups []models.Standup) {
 	targetChannelID := channelID
-    if targetChannelID == "" {
-        dm, _ := s.UserChannelCreate(userID)
-        targetChannelID = dm.ID
-    }
+	if targetChannelID == "" {
+		dm, _ := s.UserChannelCreate(userID)
+		targetChannelID = dm.ID
+	}
 
 	var options []discordgo.SelectMenuOption
 	for _, st := range standups {
@@ -256,15 +347,15 @@ func (h *BotHanlder) sendStandupSelectionMenu(s *discordgo.Session, userID, guil
 
 func (h *BotHanlder) handleStandupSelection(session *discordgo.Session, intr *discordgo.InteractionCreate) {
 	var userID string
-    if intr.Member != nil {
-        userID = intr.Member.User.ID
-    } else {
-        userID = intr.User.ID
-    }
+	if intr.Member != nil {
+		userID = intr.Member.User.ID
+	} else {
+		userID = intr.User.ID
+	}
 
 	if len(intr.MessageComponentData().Values) == 0 {
-        return
-    }
+		return
+	}
 	selectedID := intr.MessageComponentData().Values[0]
 
 	var standup models.Standup
@@ -272,9 +363,9 @@ func (h *BotHanlder) handleStandupSelection(session *discordgo.Session, intr *di
 
 	var user models.UserProfile
 	if err := h.DB.Preload("Standups").Where("user_id = ?", userID).First(&user).Error; err != nil {
-         log.Println("Error finding user:", err)
-         return
-    }
+		log.Println("Error finding user:", err)
+		return
+	}
 
 	h.DB.Model(&user).Association("Standups").Append(&standup)
 

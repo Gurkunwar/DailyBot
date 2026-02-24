@@ -19,7 +19,7 @@ func NewSession() (*discordgo.Session, error) {
 }
 
 func RegisterCommands(dg *discordgo.Session) {
-	log.Println("Registering slash commands...")
+	log.Println("Registering bot commands...")
     for _, command := range Commands {
         _, err := dg.ApplicationCommandCreate(dg.State.User.ID, "", command)
         if err != nil {

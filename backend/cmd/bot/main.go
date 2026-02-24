@@ -31,8 +31,8 @@ func main() {
 	standupSvc := &services.StandupService{
 		DB:          db,
         Session:     dg,
-        TriggerFunc: func(s *discordgo.Session, userID string, guildID string, standupID uint) {
-             handler.InitiateStandup(s, userID, guildID, "", standupID)
+        TriggerFunc: func(s *discordgo.Session, userID string, guildID, channelID string, standupID uint) {
+             handler.InitiateStandup(s, userID, guildID, channelID, standupID)
         },
 	}
 

@@ -23,7 +23,7 @@ func (h *BotHanlder) handleTimezoneSelection(session *discordgo.Session, intr *d
 	h.DB.Save(&profile)
 
 	state, err := store.GetState(h.Redis, userID)
-	if err != nil {
+	if err != nil || state.StandupID == 0 {
 		log.Println("Error fetching state after TZ selection:", err)
 		return
 	}
@@ -35,14 +35,6 @@ func (h *BotHanlder) handleTimezoneSelection(session *discordgo.Session, intr *d
 			Components: []discordgo.MessageComponent{},
 		},
 	})
-
-	var standup models.Standup
-	h.DB.First(&standup, state.StandupID)
-
-	state.CurrentStep = 0
-	store.SaveState(h.Redis, userID, *state)
-
-	h.startQuestionFlow(session, intr.ChannelID, userID, standup)
 }
 
 func (h *BotHanlder) OnInteraction(session *discordgo.Session, intr *discordgo.InteractionCreate) {
@@ -58,7 +50,6 @@ func (h *BotHanlder) OnInteraction(session *discordgo.Session, intr *discordgo.I
 
 		switch data.Name {
 		case "start":
-			h.InitiateStandup(session, userID, intr.GuildID, intr.ChannelID, 0)
 			session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
 				Type: discordgo.InteractionResponseChannelMessageWithSource,
 				Data: &discordgo.InteractionResponseData{
@@ -66,6 +57,7 @@ func (h *BotHanlder) OnInteraction(session *discordgo.Session, intr *discordgo.I
 					Flags:   discordgo.MessageFlagsEphemeral,
 				},
 			})
+			h.InitiateStandup(session, userID, intr.GuildID, intr.ChannelID, 0)
 		case "help":
 			h.handleHelp(session, intr)
 		case "reset":
@@ -74,6 +66,10 @@ func (h *BotHanlder) OnInteraction(session *discordgo.Session, intr *discordgo.I
 			h.handleSetChannel(session, intr)
 		case "create-standup":
 			h.handleCreateStandup(session, intr)
+		case "add-member":
+			h.handleAddMember(session, intr)
+		case "timezone":
+			h.sendTimezoneMenu(session, intr.ChannelID, userID, 0)
 		}
 	case discordgo.InteractionMessageComponent:
 		switch intr.MessageComponentData().CustomID {

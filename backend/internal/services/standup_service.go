@@ -14,7 +14,7 @@ import (
 type StandupService struct {
 	DB          *gorm.DB
 	Session     *discordgo.Session
-	TriggerFunc func(s *discordgo.Session, userID, guildID string, standupID uint)
+	TriggerFunc func(s *discordgo.Session, userID, guildID, channelID string, standupID uint)
 }
 
 func (s *StandupService) StartTimezoneWorker() {
@@ -35,6 +35,11 @@ func (s *StandupService) CheckAndTriggerStandups() {
     }
 
     for _, standup := range standups {
+        timeStr := standup.Time
+        if timeStr == "" {
+            timeStr = "09:00"
+        }
+
 		var targetHour, targetMinute int
         _, err := fmt.Sscanf(standup.Time, "%d:%d", &targetHour, &targetMinute)
         if err != nil {
@@ -64,8 +69,8 @@ func (s *StandupService) CheckAndTriggerStandups() {
                     channel, err := s.Session.UserChannelCreate(user.UserID)
                     if err == nil {
                         s.Session.ChannelMessageSend(channel.ID, 
-							fmt.Sprintf("🔔 **Good Morning!** It's time for your **%s** standup.", standup.Name))
-                        s.TriggerFunc(s.Session, user.UserID, standup.GuildID, standup.ID)
+							fmt.Sprintf("🔔 **Hey!** It's time for your **%s** standup.", standup.Name))
+                        s.TriggerFunc(s.Session, user.UserID, standup.GuildID, "", standup.ID)
                     }
                 }
             }

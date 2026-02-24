@@ -2,6 +2,8 @@ package bot
 
 import (
 	"fmt"
+	"log"
+
 	"github.com/Gurkunwar/dailybot/internal/models"
 	"github.com/bwmarrin/discordgo"
 )
@@ -18,6 +20,10 @@ var Commands = []*discordgo.ApplicationCommand{
 	{
 		Name:        "reset",
 		Description: "Clear your timezone and primary server settings",
+	},
+	{
+		Name:        "timezone",
+		Description: "Set your local timezone for standup reminders",
 	},
 	{
 		Name:        "set-channel",
@@ -55,18 +61,36 @@ var Commands = []*discordgo.ApplicationCommand{
 				Required:    true,
 			},
 			{
+				Type:        discordgo.ApplicationCommandOptionString,
+				Name:        "members",
+				Description: "Tag the members to add (e.g. @User1 @User2)",
+				Required:    true,
+			},
+			{
+				Type:        discordgo.ApplicationCommandOptionString,
+				Name:        "time",
+				Description: "Time to trigger standup (HH:MM in 24h format, e.g. 09:30)",
+				Required:    false,
+			},
+		},
+	},
+	{
+		Name: "add-member",
+		Description: "Add a user to an existing standup (Manager Only)",
+		Options: []*discordgo.ApplicationCommandOption{
+            {
+                Type:        discordgo.ApplicationCommandOptionUser,
+                Name:        "user",
+                Description: "The user you want to add",
+                Required:    true,
+            }, 
+            {
                 Type:        discordgo.ApplicationCommandOptionString,
-                Name:        "members",
-                Description: "Tag the members to add (e.g. @User1 @User2)",
+                Name:        "standup_name",
+                Description: "The exact name of the standup (e.g. 'Backend')",
                 Required:    true,
             },
-			{
-                Type:        discordgo.ApplicationCommandOptionString,
-                Name:        "time",
-                Description: "Time to trigger standup (HH:MM in 24h format, e.g. 09:30)",
-                Required:    false,
-            },
-		},
+        },
 	},
 }
 
@@ -76,27 +100,27 @@ func (h *BotHanlder) handleSetChannel(session *discordgo.Session, intr *discordg
 	standupName := options[1].Value.(string)
 
 	var standup models.Standup
-    result := h.DB.Where("guild_id = ? AND name = ?", intr.GuildID, standupName).First(&standup)
-    
-    if result.Error != nil {
-        session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
-            Type: discordgo.InteractionResponseChannelMessageWithSource,
-            Data: &discordgo.InteractionResponseData{
-                Content: "❌ Standup not found. Create it first with `/create-standup`.",
-            },
-        })
-        return
-    }
+	result := h.DB.Where("guild_id = ? AND name = ?", intr.GuildID, standupName).First(&standup)
 
-    standup.ReportChannelID = targetChannelID
-    h.DB.Save(&standup)
+	if result.Error != nil {
+		session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
+			Type: discordgo.InteractionResponseChannelMessageWithSource,
+			Data: &discordgo.InteractionResponseData{
+				Content: "❌ Standup not found. Create it first with `/create-standup`.",
+			},
+		})
+		return
+	}
 
-    session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
-        Type: discordgo.InteractionResponseChannelMessageWithSource,
-        Data: &discordgo.InteractionResponseData{
-            Content: fmt.Sprintf("✅ Reports for **%s** will now be sent to <#%s>", standup.Name, targetChannelID),
-        },
-    })
+	standup.ReportChannelID = targetChannelID
+	h.DB.Save(&standup)
+
+	session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseChannelMessageWithSource,
+		Data: &discordgo.InteractionResponseData{
+			Content: fmt.Sprintf("✅ Reports for **%s** will now be sent to <#%s>", standup.Name, targetChannelID),
+		},
+	})
 }
 
 func (h *BotHanlder) handleHelp(session *discordgo.Session, intr *discordgo.InteractionCreate) {
@@ -117,24 +141,38 @@ func (h *BotHanlder) handleHelp(session *discordgo.Session, intr *discordgo.Inte
 
 func (h *BotHanlder) handleReset(session *discordgo.Session, intr *discordgo.InteractionCreate) {
 	var userID string
-    if intr.Member != nil {
-        userID = intr.Member.User.ID
-    } else {
-        userID = intr.User.ID
-    }
-
-	result := h.DB.Where("user_id = ?", userID).Delete(&models.UserProfile{})
-
-	if result.Error != nil {
-		session.ChannelMessageSend(intr.ChannelID, "❌ Failed to reset profile. Please try again.")
-		return
+	if intr.Member != nil {
+		userID = intr.Member.User.ID
+	} else {
+		userID = intr.User.ID
 	}
 
+	var user models.UserProfile
+    if err := h.DB.Unscoped().Where("user_id = ?", userID).First(&user).Error; err != nil {
+        session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
+            Type: discordgo.InteractionResponseChannelMessageWithSource,
+            Data: &discordgo.InteractionResponseData{
+                Content: "❌ No profile found to reset.",
+                Flags:   discordgo.MessageFlagsEphemeral,
+            },
+        })
+        return
+    }
+
+	if err := h.DB.Model(&user).Association("Standups").Clear(); err != nil {
+        log.Println("Error clearing standup teams:", err)
+    }
+
+	if result := h.DB.Unscoped().Delete(&user); result.Error != nil {
+        session.ChannelMessageSend(intr.ChannelID, "❌ Failed to reset profile.")
+        return
+    }
+
 	session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
-		Type: discordgo.InteractionResponseChannelMessageWithSource,
-		Data: &discordgo.InteractionResponseData{
-			Content: "✅ Profile reset! Use `/start` to set your new timezone.",
-			Flags:   discordgo.MessageFlagsEphemeral,
-		},
-	})
+        Type: discordgo.InteractionResponseChannelMessageWithSource,
+        Data: &discordgo.InteractionResponseData{
+            Content: "✅ **Profile Reset Complete.** You have been removed from all standup teams.",
+            Flags:   discordgo.MessageFlagsEphemeral,
+        },
+    })
 }
