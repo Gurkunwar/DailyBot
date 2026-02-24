@@ -71,6 +71,10 @@ func (h *BotHanlder) OnInteraction(session *discordgo.Session, intr *discordgo.I
 			h.handleDeleteStandup(session, intr)
 		case "add-member":
 			h.handleAddMember(session, intr)
+		case "remove-member":
+			h.handleRemoveMember(session, intr)
+		case "history":
+			h.handleHistory(session, intr)
 		case "timezone":
 			h.sendTimezoneMenu(session, intr.ChannelID, userID, 0)
 		}
@@ -86,7 +90,7 @@ func (h *BotHanlder) OnInteraction(session *discordgo.Session, intr *discordgo.I
 	case discordgo.InteractionModalSubmit:
 		h.handleModalSubmit(session, intr)
 	case discordgo.InteractionApplicationCommandAutocomplete:
-        h.handleAutocomplete(session, intr)
+		h.handleAutocomplete(session, intr)
 	}
 }
 
@@ -171,46 +175,51 @@ func (h *BotHanlder) handleModalSubmit(session *discordgo.Session, intr *discord
 }
 
 func (h *BotHanlder) handleAutocomplete(session *discordgo.Session, intr *discordgo.InteractionCreate) {
-    data := intr.ApplicationCommandData()
-    choices := []*discordgo.ApplicationCommandOptionChoice{}
+	data := intr.ApplicationCommandData()
+	choices := []*discordgo.ApplicationCommandOptionChoice{}
 
-    var typedValue string
-    for _, opt := range data.Options {
-        if opt.Focused {
-            typedValue = strings.ToLower(opt.StringValue())
-            break
-        }
-    }
+	var typedValue string
+	for _, opt := range data.Options {
+		if opt.Focused {
+			typedValue = strings.ToLower(opt.StringValue())
+			break
+		}
+	}
 
-    if data.Name == "delete-standup" || data.Name == "add-member" || data.Name == "set-channel" {
-        var userID string
-        if intr.Member != nil {
-            userID = intr.Member.User.ID
-        } else {
-            userID = intr.User.ID
-        }
+	if data.Name == "delete-standup" ||
+		data.Name == "add-member" ||
+		data.Name == "remove-member" ||
+		data.Name == "set-channel" ||
+		data.Name == "history" {
 
-        var standups []models.Standup
-        h.DB.Where("guild_id = ? AND manager_id = ?", intr.GuildID, userID).Find(&standups)
+		var userID string
+		if intr.Member != nil {
+			userID = intr.Member.User.ID
+		} else {
+			userID = intr.User.ID
+		}
 
-        for _, st := range standups {
-            if strings.Contains(strings.ToLower(st.Name), typedValue) {
-                choices = append(choices, &discordgo.ApplicationCommandOptionChoice{
-                    Name:  st.Name,
-                    Value: st.Name,
-                })
-            }
-        }
-    }
+		var standups []models.Standup
+		h.DB.Where("guild_id = ? AND manager_id = ?", intr.GuildID, userID).Find(&standups)
 
-    if len(choices) > 25 {
-        choices = choices[:25]
-    }
+		for _, st := range standups {
+			if strings.Contains(strings.ToLower(st.Name), typedValue) {
+				choices = append(choices, &discordgo.ApplicationCommandOptionChoice{
+					Name:  st.Name,
+					Value: st.Name,
+				})
+			}
+		}
+	}
 
-    session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
-        Type: discordgo.InteractionApplicationCommandAutocompleteResult,
-        Data: &discordgo.InteractionResponseData{
-            Choices: choices,
-        },
-    })
+	if len(choices) > 25 {
+		choices = choices[:25]
+	}
+
+	session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionApplicationCommandAutocompleteResult,
+		Data: &discordgo.InteractionResponseData{
+			Choices: choices,
+		},
+	})
 }

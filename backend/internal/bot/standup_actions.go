@@ -95,6 +95,28 @@ func (h *BotHanlder) finalizeStandup(s *discordgo.Session, state *models.Standup
 		return
 	}
 
+	var userProfile models.UserProfile
+	h.DB.Where("user_id = ?", state.UserID).First(&userProfile)
+
+	loc, err := time.LoadLocation(userProfile.Timezone)
+	if err != nil {
+		loc = time.UTC
+	}
+	localToday := time.Now().In(loc).Format("2006-01-02")
+
+	history := models.StandupHistory{
+		UserID:    state.UserID,
+		StandupID: state.StandupID,
+		Date:      localToday,
+		Answers:   state.Answers,
+	}
+
+	if err := h.DB.Create(&history).Error; err != nil {
+		log.Println("❌ Error saving standup history to database:", err)
+	} else {
+		log.Printf("✅ Saved history for user %s on %s", state.UserID, localToday)
+	}
+
 	var fields []*discordgo.MessageEmbedField
 	for i, answer := range state.Answers {
 		questionText := "Update"
@@ -313,7 +335,176 @@ func (h *BotHanlder) handleAddMember(session *discordgo.Session, intr *discordgo
 	}
 }
 
-func (h *BotHanlder) sendTimezoneMenu(s *discordgo.Session, channelID, userID string, standupID uint) {
+func (h *BotHanlder) handleRemoveMember(session *discordgo.Session, intr *discordgo.InteractionCreate) {
+	options := intr.ApplicationCommandData().Options
+	targetUser := options[0].UserValue(session)
+	targetStandup := options[1].StringValue()
+
+	var standup models.Standup
+	result := h.DB.Where("guild_id = ? and name = ?", intr.GuildID, targetStandup).First(&standup)
+
+	if result.Error != nil {
+		session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
+			Type: discordgo.InteractionResponseChannelMessageWithSource,
+			Data: &discordgo.InteractionResponseData{
+				Content: fmt.Sprintf("❌ Standup named **%s** not found in this server.", targetStandup),
+				Flags:   discordgo.MessageFlagsEphemeral,
+			},
+		})
+		return
+	}
+
+	if standup.ManagerID != intr.Member.User.ID {
+		session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
+			Type: discordgo.InteractionResponseChannelMessageWithSource,
+			Data: &discordgo.InteractionResponseData{
+				Content: "⛔ You are not the manager of this standup.",
+				Flags:   discordgo.MessageFlagsEphemeral,
+			},
+		})
+		return
+	}
+
+	var userProfile models.UserProfile
+	if err := h.DB.Where("user_id = ?", targetUser.ID).First(&userProfile).Error; err != nil {
+		session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
+			Type: discordgo.InteractionResponseChannelMessageWithSource,
+			Data: &discordgo.InteractionResponseData{
+				Content: "❌ This user is not registered in the bot or is already not part of any standups.",
+				Flags:   discordgo.MessageFlagsEphemeral,
+			},
+		})
+		return
+	}
+
+	err := h.DB.Model(&userProfile).Association("Standups").Delete(&standup)
+	if err != nil {
+		session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
+			Type: discordgo.InteractionResponseChannelMessageWithSource,
+			Data: &discordgo.InteractionResponseData{
+				Content: "❌ Failed to remove member from the database.",
+				Flags:   discordgo.MessageFlagsEphemeral,
+			},
+		})
+		return
+	}
+
+	session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseChannelMessageWithSource,
+		Data: &discordgo.InteractionResponseData{
+			Content: fmt.Sprintf("✅ <@%s> has been successfully removed from **%s**.", targetUser.ID, standup.Name),
+			Flags:   discordgo.MessageFlagsEphemeral,
+		},
+	})
+
+	dmChannel, err := session.UserChannelCreate(targetUser.ID)
+	if err == nil {
+		session.ChannelMessageSend(dmChannel.ID, fmt.Sprintf(
+			"ℹ️ You have been removed from the **%s** standup team by the manager.",
+			standup.Name))
+	}
+}
+
+func (h *BotHanlder) handleHistory(session *discordgo.Session, intr *discordgo.InteractionCreate) {
+	options := intr.ApplicationCommandData().Options
+	targetUser := options[0].UserValue(session)
+	standupName := options[1].StringValue()
+	days := 5
+
+	if len(options) > 2 {
+		days = int(options[2].IntValue())
+		if days > 10 {
+			days = 10
+		}
+	}
+
+	var callerID string
+	if intr.Member != nil {
+		callerID = intr.Member.User.ID
+	} else {
+		callerID = intr.User.ID
+	}
+
+	var standup models.Standup
+	if err := h.DB.
+		Where("guild_id = ? and name = ?", intr.GuildID, standupName).
+		First(&standup).
+		Error; err != nil {
+		session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
+			Type: discordgo.InteractionResponseChannelMessageWithSource,
+			Data: &discordgo.InteractionResponseData{
+				Content: fmt.Sprintf("❌ Standup named **%s** not found.", standupName),
+				Flags:   discordgo.MessageFlagsEphemeral,
+			},
+		})
+		return
+	}
+
+	if standup.ManagerID != callerID && targetUser.ID != callerID {
+		session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
+			Type: discordgo.InteractionResponseChannelMessageWithSource,
+			Data: &discordgo.InteractionResponseData{
+				Content: "⛔ You can only view your own history, or history for teams you manage.",
+				Flags:   discordgo.MessageFlagsEphemeral,
+			},
+		})
+		return
+	}
+
+	cutoffDate := time.Now().AddDate(0, 0, -days).Format("2006-01-02")
+	var histories []models.StandupHistory
+
+	h.DB.Where("user_id = ? AND standup_id = ? AND date >= ?", targetUser.ID, standup.ID, cutoffDate).
+		Order("date desc").
+		Limit(10).
+		Find(&histories)
+
+	if len(histories) == 0 {
+		session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
+			Type: discordgo.InteractionResponseChannelMessageWithSource,
+			Data: &discordgo.InteractionResponseData{
+				Content: fmt.Sprintf("📭 No standup history found for <@%s> in **%s** over the last %d days.",
+					targetUser.ID, standup.Name, days),
+				Flags: discordgo.MessageFlagsEphemeral,
+			},
+		})
+		return
+	}
+
+	var embeds []*discordgo.MessageEmbed
+    for _, hist := range histories {
+        var fields []*discordgo.MessageEmbedField
+        
+        for i, answer := range hist.Answers {
+            questionText := "Update"
+            if i < len(standup.Questions) {
+                questionText = standup.Questions[i]
+            }
+            fields = append(fields, &discordgo.MessageEmbedField{
+                Name:   questionText,
+                Value:  "👉 " + answer,
+                Inline: false,
+            })
+        }
+
+        embeds = append(embeds, &discordgo.MessageEmbed{
+            Title:  fmt.Sprintf("📅 Report from %s", hist.Date),
+            Color:  0x5865F2,
+            Fields: fields,
+        })
+    }
+
+	session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
+        Type: discordgo.InteractionResponseChannelMessageWithSource,
+        Data: &discordgo.InteractionResponseData{
+            Content: fmt.Sprintf("📜 **Standup History for <@%s> in %s**", targetUser.ID, standup.Name),
+            Embeds:  embeds,
+            Flags:   discordgo.MessageFlagsEphemeral,
+        },
+    })
+}
+
+func (h *BotHanlder) sendTimezoneMenu(session *discordgo.Session, channelID, userID string, standupID uint) {
 	state := models.StandupState{
 		UserID:      userID,
 		StandupID:   standupID,
@@ -328,7 +519,7 @@ func (h *BotHanlder) sendTimezoneMenu(s *discordgo.Session, channelID, userID st
 		{Label: "Singapore (SGT)", Value: "Asia/Singapore", Description: "UTC+8:00"},
 	}
 
-	s.ChannelMessageSendComplex(channelID, &discordgo.MessageSend{
+	session.ChannelMessageSendComplex(channelID, &discordgo.MessageSend{
 		Content: "Welcome to **DailyBot**! I don't know your timezone yet. Please pick one:",
 		Components: []discordgo.MessageComponent{
 			discordgo.ActionsRow{
@@ -371,38 +562,48 @@ func (h *BotHanlder) startQuestionFlow(session *discordgo.Session, channelID, us
 }
 
 func (h *BotHanlder) sendStandupSelectionMenu(s *discordgo.Session,
-	userID,
-	guildID, channelID string,
-	standups []models.Standup) {
-	targetChannelID := channelID
-	if targetChannelID == "" {
-		dm, _ := s.UserChannelCreate(userID)
-		targetChannelID = dm.ID
-	}
+    userID,
+    guildID, channelID string,
+    standups []models.Standup) {
 
-	var options []discordgo.SelectMenuOption
-	for _, st := range standups {
-		options = append(options, discordgo.SelectMenuOption{
-			Label:       st.Name,
-			Value:       fmt.Sprintf("%d", st.ID),
-			Description: fmt.Sprintf("ID: %d", st.ID),
-		})
-	}
+    targetChannelID := channelID
+    if targetChannelID == "" {
+        dm, _ := s.UserChannelCreate(userID)
+        targetChannelID = dm.ID
+    }
 
-	s.ChannelMessageSendComplex(targetChannelID, &discordgo.MessageSend{
-		Content: "found multiple standups in this server. Please select one:",
-		Components: []discordgo.MessageComponent{
-			discordgo.ActionsRow{
-				Components: []discordgo.MessageComponent{
-					discordgo.SelectMenu{
-						CustomID:    "select_standup_join",
-						Placeholder: "Choose a standup to join...",
-						Options:     options,
-					},
-				},
-			},
-		},
-	})
+    var options []discordgo.SelectMenuOption
+    for _, st := range standups {
+        if guildID != "" && st.GuildID != guildID {
+            continue
+        }
+
+        options = append(options, discordgo.SelectMenuOption{
+            Label:       st.Name,
+            Value:       fmt.Sprintf("%d", st.ID),
+            Description: fmt.Sprintf("ID: %d", st.ID),
+        })
+    }
+
+    if len(options) == 0 {
+        s.ChannelMessageSend(targetChannelID, "⛔ You are not part of any standups in this specific server.")
+        return
+    }
+
+    s.ChannelMessageSendComplex(targetChannelID, &discordgo.MessageSend{
+        Content: "Found multiple standups. Please select one:",
+        Components: []discordgo.MessageComponent{
+            discordgo.ActionsRow{
+                Components: []discordgo.MessageComponent{
+                    discordgo.SelectMenu{
+                        CustomID:    "select_standup_join",
+                        Placeholder: "Choose a standup to join...",
+                        Options:     options,
+                    },
+                },
+            },
+        },
+    })
 }
 
 func (h *BotHanlder) handleStandupSelection(session *discordgo.Session, intr *discordgo.InteractionCreate) {

@@ -37,12 +37,12 @@ var Commands = []*discordgo.ApplicationCommand{
 				Required:    true,
 			},
 			{
-                Type:         discordgo.ApplicationCommandOptionString,
-                Name:         "standup_name",
-                Description:  "The standup to update",
-                Required:     true,
-                Autocomplete: true,
-            },
+				Type:         discordgo.ApplicationCommandOptionString,
+				Name:         "standup_name",
+				Description:  "The standup to update",
+				Required:     true,
+				Autocomplete: true,
+			},
 		},
 	},
 	{
@@ -82,34 +82,78 @@ var Commands = []*discordgo.ApplicationCommand{
 		},
 	},
 	{
-		Name: "delete-standup",
-		Description: "Permanently delete an existing standup team (Manager only)",
+		Name:        "delete-standup",
+		Description: "Permanently delete an existing standup team (Admin only)",
 		Options: []*discordgo.ApplicationCommandOption{
 			{
-				Type: discordgo.ApplicationCommandOptionString,
-				Name: "name",
-				Description: "Name of the standup you want to delete",
-				Required: true,
+				Type:         discordgo.ApplicationCommandOptionString,
+				Name:         "name",
+				Description:  "Name of the standup you want to delete",
+				Required:     true,
 				Autocomplete: true,
 			},
 		},
 	},
 	{
-		Name: "add-member",
-		Description: "Add a user to an existing standup (Manager Only)",
+		Name:        "add-member",
+		Description: "Add a user to an existing standup (Admin Only)",
+		Options: []*discordgo.ApplicationCommandOption{
+			{
+				Type:        discordgo.ApplicationCommandOptionUser,
+				Name:        "user",
+				Description: "The user you want to add",
+				Required:    true,
+			},
+			{
+				Type:         discordgo.ApplicationCommandOptionString,
+				Name:         "standup_name",
+				Description:  "The exact name of the standup (e.g. 'Backend')",
+				Required:     true,
+				Autocomplete: true,
+			},
+		},
+	},
+	{
+		Name:        "remove-member",
+		Description: "Remove a user from an existing standup (Admin Only)",
+		Options: []*discordgo.ApplicationCommandOption{
+			{
+				Type:        discordgo.ApplicationCommandOptionUser,
+				Name:        "user",
+				Description: "The user you want to remove",
+				Required:    true,
+			},
+			{
+				Type:         discordgo.ApplicationCommandOptionString,
+				Name:         "standup_name",
+				Description:  "The exact name of the standup (e.g. 'Backend')",
+				Required:     true,
+				Autocomplete: true,
+			},
+		},
+	},
+	{
+		Name: "history",
+		Description: "View past standup reports",
 		Options: []*discordgo.ApplicationCommandOption{
             {
                 Type:        discordgo.ApplicationCommandOptionUser,
                 Name:        "user",
-                Description: "The user you want to add",
+                Description: "The user whose history you want to see",
                 Required:    true,
-            }, 
+            },
             {
-                Type:        discordgo.ApplicationCommandOptionString,
-                Name:        "standup_name",
-                Description: "The exact name of the standup (e.g. 'Backend')",
-                Required:    true,
-				Autocomplete: true,
+                Type:         discordgo.ApplicationCommandOptionString,
+                Name:         "standup_name",
+                Description:  "The standup team",
+                Required:     true,
+                Autocomplete: true,
+            },
+            {
+                Type:        discordgo.ApplicationCommandOptionInteger,
+                Name:        "days",
+                Description: "Number of days to look back (default 5, max 10)",
+                Required:    false,
             },
         },
 	},
@@ -169,31 +213,31 @@ func (h *BotHanlder) handleReset(session *discordgo.Session, intr *discordgo.Int
 	}
 
 	var user models.UserProfile
-    if err := h.DB.Unscoped().Where("user_id = ?", userID).First(&user).Error; err != nil {
-        session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
-            Type: discordgo.InteractionResponseChannelMessageWithSource,
-            Data: &discordgo.InteractionResponseData{
-                Content: "❌ No profile found to reset.",
-                Flags:   discordgo.MessageFlagsEphemeral,
-            },
-        })
-        return
-    }
+	if err := h.DB.Unscoped().Where("user_id = ?", userID).First(&user).Error; err != nil {
+		session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
+			Type: discordgo.InteractionResponseChannelMessageWithSource,
+			Data: &discordgo.InteractionResponseData{
+				Content: "❌ No profile found to reset.",
+				Flags:   discordgo.MessageFlagsEphemeral,
+			},
+		})
+		return
+	}
 
 	if err := h.DB.Model(&user).Association("Standups").Clear(); err != nil {
-        log.Println("Error clearing standup teams:", err)
-    }
+		log.Println("Error clearing standup teams:", err)
+	}
 
 	if result := h.DB.Unscoped().Delete(&user); result.Error != nil {
-        session.ChannelMessageSend(intr.ChannelID, "❌ Failed to reset profile.")
-        return
-    }
+		session.ChannelMessageSend(intr.ChannelID, "❌ Failed to reset profile.")
+		return
+	}
 
 	session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
-        Type: discordgo.InteractionResponseChannelMessageWithSource,
-        Data: &discordgo.InteractionResponseData{
-            Content: "✅ **Profile Reset Complete.** You have been removed from all standup teams.",
-            Flags:   discordgo.MessageFlagsEphemeral,
-        },
-    })
+		Type: discordgo.InteractionResponseChannelMessageWithSource,
+		Data: &discordgo.InteractionResponseData{
+			Content: "✅ **Profile Reset Complete.** You have been removed from all standup teams.",
+			Flags:   discordgo.MessageFlagsEphemeral,
+		},
+	})
 }
