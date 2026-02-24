@@ -508,7 +508,6 @@ func (h *BotHanlder) sendTimezoneMenu(session *discordgo.Session, channelID, use
 	state := models.StandupState{
 		UserID:      userID,
 		StandupID:   standupID,
-		CurrentStep: -1,
 	}
 	store.SaveState(h.Redis, userID, state)
 
@@ -540,7 +539,6 @@ func (h *BotHanlder) startQuestionFlow(session *discordgo.Session, channelID, us
 		UserID:      userID,
 		GuildID:     standup.GuildID,
 		StandupID:   standup.ID,
-		CurrentStep: 0,
 		Answers:     []string{},
 	}
 	store.SaveState(h.Redis, userID, state)
