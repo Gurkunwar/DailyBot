@@ -186,6 +186,66 @@ func (h *BotHanlder) handleCreateStandup(s *discordgo.Session, i *discordgo.Inte
 	})
 }
 
+func (h *BotHanlder) handleDeleteStandup(session *discordgo.Session, intr *discordgo.InteractionCreate) {
+	standupName := intr.ApplicationCommandData().Options[0].StringValue()
+
+	var userID string
+	if intr.Member != nil {
+		userID = intr.Member.User.ID
+	} else {
+		userID = intr.User.ID
+	}
+
+	var standup models.Standup
+	result := h.DB.Preload("Participants").
+		Where("guild_id = ? and name = ?", intr.GuildID, standupName).
+		First(&standup)
+	if result.Error != nil {
+		session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
+			Type: discordgo.InteractionResponseChannelMessageWithSource,
+			Data: &discordgo.InteractionResponseData{
+				Content: fmt.Sprintf("❌ Standup named **%s** not found in this server.", standupName),
+				Flags:   discordgo.MessageFlagsEphemeral,
+			},
+		})
+		return
+	}
+
+	if standup.ManagerID != userID {
+		session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
+			Type: discordgo.InteractionResponseChannelMessageWithSource,
+			Data: &discordgo.InteractionResponseData{
+				Content: "⛔ Only the manager who created this standup can delete it.",
+				Flags:   discordgo.MessageFlagsEphemeral,
+			},
+		})
+		return
+	}
+
+	if err := h.DB.Model(&standup).Association("Participants").Clear(); err != nil {
+		log.Println("Error clearing standup participants during deletion:", err)
+	}
+
+	if err := h.DB.Unscoped().Delete(&standup).Error; err != nil {
+		session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
+			Type: discordgo.InteractionResponseChannelMessageWithSource,
+			Data: &discordgo.InteractionResponseData{
+				Content: "❌ Failed to delete the standup from the database.",
+				Flags:   discordgo.MessageFlagsEphemeral,
+			},
+		})
+		return
+	}
+
+	session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseChannelMessageWithSource,
+		Data: &discordgo.InteractionResponseData{
+			Content: fmt.Sprintf("🗑️ ✅ Standup **%s** and all its participant links have been permanently deleted.",
+				standup.Name),
+		},
+	})
+}
+
 func (h *BotHanlder) handleAddMember(session *discordgo.Session, intr *discordgo.InteractionCreate) {
 	options := intr.ApplicationCommandData().Options
 	targetUser := options[0].UserValue(session)
@@ -222,35 +282,35 @@ func (h *BotHanlder) handleAddMember(session *discordgo.Session, intr *discordgo
 		FirstOrCreate(&userProfile, models.UserProfile{UserID: targetUser.ID})
 
 	if userProfile.DeletedAt.Valid {
-        h.DB.Model(&userProfile).Unscoped().Update("deleted_at", nil)
-    }
+		h.DB.Model(&userProfile).Unscoped().Update("deleted_at", nil)
+	}
 
 	err := h.DB.Model(&userProfile).Association("Standups").Append(&standup)
 	if err != nil {
 		session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
 			Type: discordgo.InteractionResponseChannelMessageWithSource,
-            Data: &discordgo.InteractionResponseData{
-                Content: "❌ Failed to link member to the standup team in the database.",
-                Flags:   discordgo.MessageFlagsEphemeral,
-            },
+			Data: &discordgo.InteractionResponseData{
+				Content: "❌ Failed to link member to the standup team in the database.",
+				Flags:   discordgo.MessageFlagsEphemeral,
+			},
 		})
 		return
 	}
 
 	session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
-        Type: discordgo.InteractionResponseChannelMessageWithSource,
-        Data: &discordgo.InteractionResponseData{
-            Content: fmt.Sprintf("✅ <@%s> has been added to **%s**!", targetUser.ID, standup.Name),
-        },
-    })
+		Type: discordgo.InteractionResponseChannelMessageWithSource,
+		Data: &discordgo.InteractionResponseData{
+			Content: fmt.Sprintf("✅ <@%s> has been added to **%s**!", targetUser.ID, standup.Name),
+		},
+	})
 
 	dmChannel, err := session.UserChannelCreate(targetUser.ID)
-    if err == nil {
-        session.ChannelMessageSend(dmChannel.ID, fmt.Sprintf(
-            `👋 You've been added to the **%s** standup by your manager.
-			\nRun "/start" in the server to submit your daily report.`, 
-            standup.Name))
-    }
+	if err == nil {
+		session.ChannelMessageSend(dmChannel.ID, fmt.Sprintf(
+			`👋 You've been added to the **%s** standup by your manager.
+			\nRun "/start" in the server to submit your daily report.`,
+			standup.Name))
+	}
 }
 
 func (h *BotHanlder) sendTimezoneMenu(s *discordgo.Session, channelID, userID string, standupID uint) {

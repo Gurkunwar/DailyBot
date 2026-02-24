@@ -36,6 +36,13 @@ var Commands = []*discordgo.ApplicationCommand{
 				Description: "The channel to send reports to",
 				Required:    true,
 			},
+			{
+                Type:         discordgo.ApplicationCommandOptionString,
+                Name:         "standup_name",
+                Description:  "The standup to update",
+                Required:     true,
+                Autocomplete: true,
+            },
 		},
 	},
 	{
@@ -75,6 +82,19 @@ var Commands = []*discordgo.ApplicationCommand{
 		},
 	},
 	{
+		Name: "delete-standup",
+		Description: "Permanently delete an existing standup team (Manager only)",
+		Options: []*discordgo.ApplicationCommandOption{
+			{
+				Type: discordgo.ApplicationCommandOptionString,
+				Name: "name",
+				Description: "Name of the standup you want to delete",
+				Required: true,
+				Autocomplete: true,
+			},
+		},
+	},
+	{
 		Name: "add-member",
 		Description: "Add a user to an existing standup (Manager Only)",
 		Options: []*discordgo.ApplicationCommandOption{
@@ -89,6 +109,7 @@ var Commands = []*discordgo.ApplicationCommand{
                 Name:        "standup_name",
                 Description: "The exact name of the standup (e.g. 'Backend')",
                 Required:    true,
+				Autocomplete: true,
             },
         },
 	},

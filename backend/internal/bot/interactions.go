@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strings"
 
 	"github.com/Gurkunwar/dailybot/internal/models"
 	"github.com/Gurkunwar/dailybot/internal/store"
@@ -66,6 +67,8 @@ func (h *BotHanlder) OnInteraction(session *discordgo.Session, intr *discordgo.I
 			h.handleSetChannel(session, intr)
 		case "create-standup":
 			h.handleCreateStandup(session, intr)
+		case "delete-standup":
+			h.handleDeleteStandup(session, intr)
 		case "add-member":
 			h.handleAddMember(session, intr)
 		case "timezone":
@@ -82,6 +85,8 @@ func (h *BotHanlder) OnInteraction(session *discordgo.Session, intr *discordgo.I
 		}
 	case discordgo.InteractionModalSubmit:
 		h.handleModalSubmit(session, intr)
+	case discordgo.InteractionApplicationCommandAutocomplete:
+        h.handleAutocomplete(session, intr)
 	}
 }
 
@@ -163,4 +168,49 @@ func (h *BotHanlder) handleModalSubmit(session *discordgo.Session, intr *discord
 
 	h.finalizeStandup(session, state)
 	h.Redis.Del(context.Background(), "state:"+intr.User.ID)
+}
+
+func (h *BotHanlder) handleAutocomplete(session *discordgo.Session, intr *discordgo.InteractionCreate) {
+    data := intr.ApplicationCommandData()
+    choices := []*discordgo.ApplicationCommandOptionChoice{}
+
+    var typedValue string
+    for _, opt := range data.Options {
+        if opt.Focused {
+            typedValue = strings.ToLower(opt.StringValue())
+            break
+        }
+    }
+
+    if data.Name == "delete-standup" || data.Name == "add-member" || data.Name == "set-channel" {
+        var userID string
+        if intr.Member != nil {
+            userID = intr.Member.User.ID
+        } else {
+            userID = intr.User.ID
+        }
+
+        var standups []models.Standup
+        h.DB.Where("guild_id = ? AND manager_id = ?", intr.GuildID, userID).Find(&standups)
+
+        for _, st := range standups {
+            if strings.Contains(strings.ToLower(st.Name), typedValue) {
+                choices = append(choices, &discordgo.ApplicationCommandOptionChoice{
+                    Name:  st.Name,
+                    Value: st.Name,
+                })
+            }
+        }
+    }
+
+    if len(choices) > 25 {
+        choices = choices[:25]
+    }
+
+    session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
+        Type: discordgo.InteractionApplicationCommandAutocompleteResult,
+        Data: &discordgo.InteractionResponseData{
+            Choices: choices,
+        },
+    })
 }
