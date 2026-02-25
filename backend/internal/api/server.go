@@ -4,19 +4,22 @@ import (
 	"log"
 	"net/http"
 
+	"github.com/bwmarrin/discordgo"
 	"gorm.io/gorm"
 )
 
 type Server struct {
 	DB *gorm.DB
+	Session *discordgo.Session
 }
 
-func NewServer(db *gorm.DB) *Server {
-	return &Server{DB: db}
+func NewServer(db *gorm.DB, session *discordgo.Session) *Server {
+	return &Server{DB: db, Session: session}
 }
 
 func (s *Server) Routes() {
 	http.HandleFunc("/api/auth/discord", HandleDiscordLogin(s.DB))
+	http.HandleFunc("/api/managed-standups", AuthMiddleware(s.HandleGetManagedStandups(s.Session)))
 }
 
 func (s *Server) Start(port string) {

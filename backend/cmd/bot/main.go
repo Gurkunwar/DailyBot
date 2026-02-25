@@ -45,7 +45,7 @@ func main() {
 
 	bot.RegisterCommands(dg)
 
-	apiServer := api.NewServer(db)
+	apiServer := api.NewServer(db, dg)
 	go apiServer.Start(":8080")
 
 	log.Println("DailyBot is live!")

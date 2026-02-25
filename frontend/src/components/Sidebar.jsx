@@ -1,20 +1,21 @@
 import React from "react";
-import { useNavigate } from "react-router-dom";
+import { NavLink, useNavigate } from "react-router-dom";
 
-// Small helper component kept inside the Sidebar file since only the Sidebar uses it
-function NavItem({ icon, label, isActive }) {
+function NavItem({ to, icon, label }) {
   return (
-    <a
-      href="#"
-      className={`flex items-center gap-3 px-3 py-2 rounded-md transition-colors duration-200 ${
-        isActive
-          ? "bg-[#404249] text-white"
-          : "text-[#99AAB5] hover:bg-[#35373c] hover:text-gray-200"
-      }`}
+    <NavLink
+      to={to}
+      className={({ isActive }) =>
+        `flex items-center gap-3 px-3 py-2 rounded-md transition-colors duration-200 ${
+          isActive
+            ? "bg-[#404249] text-white"
+            : "text-[#99AAB5] hover:bg-[#35373c] hover:text-gray-200"
+        }`
+      }
     >
       <span className="text-lg">{icon}</span>
       <span className="font-medium text-sm">{label}</span>
-    </a>
+    </NavLink>
   );
 }
 
@@ -44,10 +45,10 @@ export default function Sidebar() {
         </div>
 
         <nav className="p-3 space-y-1 mt-2">
-          <NavItem icon="📊" label="Overview" isActive={true} />
-          <NavItem icon="👥" label="My Teams" />
-          <NavItem icon="📜" label="History" />
-          <NavItem icon="⚙️" label="Settings" />
+          <NavItem to="/dashboard" icon="📊" label="Overview" />
+          <NavItem to="/standups" icon="👥" label="My Standups" />
+          <NavItem to="/history" icon="📜" label="History" />
+          <NavItem to="/settings" icon="⚙️" label="Settings" />
         </nav>
       </div>
 
