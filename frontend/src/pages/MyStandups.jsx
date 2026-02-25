@@ -1,11 +1,13 @@
 import React, { useEffect, useState, useCallback } from "react";
 import Sidebar from "../components/Sidebar";
 import CreateStandupModal from "../components/CreateStandupModel";
+import { useNavigate } from "react-router-dom";
 
 export default function MyStandups() {
   const [standups, setStandups] = useState([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const token = localStorage.getItem("token");
+  const navigate = useNavigate()
 
   const fetchStandups = useCallback(async () => {
     try {
@@ -50,6 +52,7 @@ export default function MyStandups() {
             {standups.map((s) => (
               <div
                 key={s.id}
+                onClick={() => navigate(`/standups/${s.id}`)}
                 className="bg-[#2b2d31] p-6 rounded-xl border border-[#1e1f22] hover:border-[#5865F2] 
                 transition-all cursor-pointer group shadow-lg"
               >

@@ -22,10 +22,15 @@ func NewServer(db *gorm.DB, session *discordgo.Session, standupService *services
 func (s *Server) Routes() {
 	http.HandleFunc("/api/auth/discord", HandleDiscordLogin(s.DB))
 	http.HandleFunc("/api/managed-standups", AuthMiddleware(s.HandleGetManagedStandups(s.Session)))
-	http.HandleFunc("/api/standups/create", AuthMiddleware(s.HandleCreateStandup))
-
+	
     http.HandleFunc("/api/user-guilds", AuthMiddleware(s.HandleGetUserGuilds))
     http.HandleFunc("/api/guild-channels", AuthMiddleware(s.HandleGetGuildChannels))
+	http.HandleFunc("/api/guild-members", AuthMiddleware(s.HandleGetGuildMembers))
+	
+	http.HandleFunc("/api/standups/create", AuthMiddleware(s.HandleCreateStandup))
+	http.HandleFunc("/api/standups/add-member", AuthMiddleware(s.HandleAddStandupMember))
+	http.HandleFunc("/api/standups/remove-member", AuthMiddleware(s.HandleRemoveStandupMember))
+	http.HandleFunc("/api/standups/get", AuthMiddleware(s.HandleGetStandup))
 }
 
 func (s *Server) Start(port string) {

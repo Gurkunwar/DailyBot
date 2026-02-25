@@ -7,6 +7,7 @@ import Dashboard from "./pages/Dashboard";
 import Home from "./pages/Home";
 import ProtectedRoute from "./components/ProtectedRoute";
 import MyStandups from "./pages/MyStandups";
+import ManageStandup from "./pages/ManageStandup";
 
 function App() {
   return (
@@ -31,6 +32,7 @@ function App() {
             </ProtectedRoute>
           }
         />
+        <Route path="/standups/:id" element={<ManageStandup />} />
       </Routes>
     </Router>
   );

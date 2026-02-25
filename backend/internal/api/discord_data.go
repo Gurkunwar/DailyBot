@@ -27,6 +27,12 @@ type ChannelDTO struct {
 	Name string `json:"name"`
 }
 
+type MemberDTO struct {
+	ID       string `json:"id"`
+	Username string `json:"username"`
+	Avatar   string `json:"avatar"`
+}
+
 func (s *Server) HandleGetUserGuilds(w http.ResponseWriter, r *http.Request) {
 	userID := r.Context().Value(UserIDKey).(string)
 
@@ -52,7 +58,7 @@ func (s *Server) HandleGetUserGuilds(w http.ResponseWriter, r *http.Request) {
 
 	responseList := make([]GuildDTO, 0)
 	botGuilds := make(map[string]bool)
-	
+
 	for _, bg := range s.Session.State.Guilds {
 		botGuilds[bg.ID] = true
 	}
@@ -101,4 +107,40 @@ func (s *Server) HandleGetGuildChannels(w http.ResponseWriter, r *http.Request) 
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(textChannels)
+}
+
+func (s *Server) HandleGetGuildMembers(w http.ResponseWriter, r *http.Request) {
+	guildID := r.URL.Query().Get("guild_id")
+	if guildID == "" {
+		http.Error(w, "Missing guild_id parameter", http.StatusBadRequest)
+		return
+	}
+
+	members, err := s.Session.GuildMembers(guildID, "", 1000)
+	if err != nil {
+		http.Error(w, "Failed to fetch guild members", http.StatusInternalServerError)
+		return
+	}
+
+	var memberList []MemberDTO
+
+	for _, m := range members {
+		if m.User.Bot {
+			continue
+		}
+
+		avatarURL := ""
+		if m.User.Avatar != "" {
+			avatarURL = "https://cdn.discordapp.com/avatars/" + m.User.ID + "/" + m.User.Avatar + ".png"
+		}
+
+		memberList = append(memberList, MemberDTO{
+			ID: m.User.ID,
+			Username: m.User.Username,
+			Avatar: avatarURL,
+		})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(memberList)
 }

@@ -3,9 +3,9 @@ package models
 import "gorm.io/gorm"
 
 type UserProfile struct {
-	gorm.Model
-	UserID       string `gorm:"uniqueIndex"`
-	Timezone     string `default:"UTC"`
-	DiscordToken string
-	Standups     []Standup `gorm:"many2many:standup_participants;"`
+	gorm.Model	`json:"-"`
+	UserID       string `gorm:"uniqueIndex" json:"user_id"`
+	Timezone     string `default:"UTC" json:"timezone"`
+	DiscordToken string	`json:"-"`
+	Standups     []Standup `gorm:"many2many:standup_participants;" json:"standups"`
 }

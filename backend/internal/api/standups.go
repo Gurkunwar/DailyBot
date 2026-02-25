@@ -89,3 +89,69 @@ func (s *Server) HandleCreateStandup(w http.ResponseWriter, r *http.Request) {
 		"message": "Standup created successfully!",
 	})
 }
+
+func (s *Server) HandleAddStandupMember(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var reqBody struct {
+		StandupID uint   `json:"standup_id"`
+		UserID    string `json:"user_id"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
+		http.Error(w, "Invalid Payload", http.StatusBadRequest)
+		return
+	}
+
+	if err := s.StandupService.AddMemberToStandup(reqBody.UserID, reqBody.StandupID); err != nil {
+		http.Error(w, "Invalid Payload", http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{"message": "Member added successfully"})
+}
+
+func (s *Server) HandleRemoveStandupMember(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var reqBody struct {
+		StandupID uint   `json:"standup_id"`
+		UserID    string `json:"user_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
+		http.Error(w, "Invalid payload", http.StatusBadRequest)
+		return
+	}
+
+	if err := s.StandupService.RemoveMemberFromStandup(reqBody.UserID, reqBody.StandupID); err != nil {
+		http.Error(w, "Failed to remove member", http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{"message": "Member removed successfully"})
+}
+
+func (s *Server) HandleGetStandup(w http.ResponseWriter, r *http.Request) {
+	standupID := r.URL.Query().Get("id")
+	if standupID == "" {
+		http.Error(w, "Missing id", http.StatusBadRequest)
+		return
+	}
+
+	var standup models.Standup
+	if err := s.DB.Preload("Participants").First(&standup, standupID).Error; err != nil {
+		http.Error(w, "Standup not found", http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(standup)
+}
