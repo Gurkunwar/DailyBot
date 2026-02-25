@@ -14,7 +14,8 @@ func (s *Server) HandleGetManagedStandups(dg *discordgo.Session) http.HandlerFun
 		managerID := r.Context().Value(UserIDKey).(string)
 		var standups []models.Standup
 
-		if err := s.DB.Where("manager_id = ?", managerID).Find(&standups).Error; err != nil {
+		standups, err := s.StandupService.GetUserManagedStandups(managerID)
+		if err != nil {
 			http.Error(w, "Database error", http.StatusInternalServerError)
 			return
 		}

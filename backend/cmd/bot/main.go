@@ -11,7 +11,6 @@ import (
 	"github.com/Gurkunwar/dailybot/internal/database"
 	"github.com/Gurkunwar/dailybot/internal/services"
 	"github.com/Gurkunwar/dailybot/internal/store"
-	"github.com/bwmarrin/discordgo"
 	"github.com/joho/godotenv"
 )
 
@@ -22,20 +21,17 @@ func main() {
 	rdb, _ := store.InitRedis()
 	dg, _ := bot.NewSession()
 
-	handler := &bot.BotHanlder{
-		Session: dg,
-		Redis: rdb,
-		DB: db,
-	}
-	dg.AddHandler(handler.OnInteraction)
-
 	standupSvc := &services.StandupService{
-		DB:          db,
-        Session:     dg,
-        TriggerFunc: func(s *discordgo.Session, userID string, guildID, channelID string, standupID uint) {
-             handler.InitiateStandup(s, userID, guildID, channelID, standupID)
-        },
+		DB:      db,
+		Session: dg,
 	}
+	userSvc := &services.UserService{DB: db}
+
+	handler := bot.NewBotHandler(dg, rdb, db, standupSvc, userSvc)
+
+	standupSvc.TriggerFunc = handler.InitiateStandup
+
+	dg.AddHandler(handler.OnInteraction)
 
 	standupSvc.StartTimezoneWorker()
 
@@ -45,7 +41,7 @@ func main() {
 
 	bot.RegisterCommands(dg)
 
-	apiServer := api.NewServer(db, dg)
+	apiServer := api.NewServer(db, dg, standupSvc)
 	go apiServer.Start(":8080")
 
 	log.Println("DailyBot is live!")

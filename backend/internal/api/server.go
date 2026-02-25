@@ -4,6 +4,7 @@ import (
 	"log"
 	"net/http"
 
+	"github.com/Gurkunwar/dailybot/internal/services"
 	"github.com/bwmarrin/discordgo"
 	"gorm.io/gorm"
 )
@@ -11,10 +12,11 @@ import (
 type Server struct {
 	DB *gorm.DB
 	Session *discordgo.Session
+	StandupService *services.StandupService
 }
 
-func NewServer(db *gorm.DB, session *discordgo.Session) *Server {
-	return &Server{DB: db, Session: session}
+func NewServer(db *gorm.DB, session *discordgo.Session, standupService *services.StandupService) *Server {
+	return &Server{DB: db, Session: session, StandupService: standupService}
 }
 
 func (s *Server) Routes() {
@@ -28,4 +30,17 @@ func (s *Server) Start(port string) {
 	if err := http.ListenAndServe(port, nil); err != nil {
 		log.Fatalf("HTTP server crashed: %v", err)
 	}
+}
+
+func (s *Server) GetDiscordMetadata(guildID, channelID string) (string, string) {
+    gName := "Unknown Server"
+    if guild, err := s.Session.State.Guild(guildID); err == nil {
+        gName = guild.Name
+    }
+
+    cName := "unknown-channel"
+    if channel, err := s.Session.State.Channel(channelID); err == nil {
+        cName = channel.Name
+    }
+    return gName, cName
 }
