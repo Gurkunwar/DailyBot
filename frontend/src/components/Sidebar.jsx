@@ -20,11 +20,17 @@ function NavItem({ icon, label, isActive }) {
 
 export default function Sidebar() {
   const navigate = useNavigate();
+  const userData = JSON.parse(localStorage.getItem("user") || "{}");
 
   const handleLogout = () => {
-    // Later, clear session tokens here
+    localStorage.removeItem("token");
+    localStorage.removeItem("user");
     navigate("/");
   };
+
+  const avatarUrl = userData.avatar
+    ? `https://cdn.discordapp.com/avatars/${userData.id}/${userData.avatar}.png`
+    : `https://cdn.discordapp.com/embed/avatars/0.png`;
 
   return (
     <aside className="w-64 bg-[#2b2d31] flex flex-col justify-between md:flex border-r border-[#1e1f22]">
@@ -48,22 +54,23 @@ export default function Sidebar() {
       {/* Bottom: User Profile & Logout */}
       <div className="bg-[#232428] p-3 flex items-center justify-between mt-auto">
         <div className="flex items-center gap-3 overflow-hidden">
-          <div
-            className="w-9 h-9 rounded-full bg-[#5865F2] flex items-center justify-center font-bold 
-          shrink-0"
-          >
-            U
-          </div>
+          <img
+            src={avatarUrl}
+            alt="Avatar"
+            className="w-9 h-9 rounded-full shrink-0 border border-gray-700"
+          />
           <div className="flex flex-col truncate">
-            <span className="text-sm font-bold truncate">User</span>
+            <span className="text-sm font-bold truncate text-white">
+              {userData.username || "Guest"}
+            </span>
             <span className="text-xs text-[#99AAB5] truncate">Manager</span>
           </div>
         </div>
 
         <button
           onClick={handleLogout}
-          className="text-[#99AAB5] hover:text-[#da373c] p-2 rounded-md hover:bg-[#313338] transition-colors 
-          cursor-pointer"
+          className="text-[#99AAB5] hover:text-[#da373c] p-2 rounded-md hover:bg-[#313338] 
+          transition-colors cursor-pointer"
           title="Logout"
         >
           <svg

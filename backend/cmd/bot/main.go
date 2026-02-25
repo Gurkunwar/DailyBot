@@ -6,6 +6,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/Gurkunwar/dailybot/internal/api"
 	"github.com/Gurkunwar/dailybot/internal/bot"
 	"github.com/Gurkunwar/dailybot/internal/database"
 	"github.com/Gurkunwar/dailybot/internal/services"
@@ -43,6 +44,9 @@ func main() {
 	}
 
 	bot.RegisterCommands(dg)
+
+	apiServer := api.NewServer(db)
+	go apiServer.Start(":8080")
 
 	log.Println("DailyBot is live!")
 	stop := make(chan os.Signal, 1)

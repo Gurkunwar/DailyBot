@@ -1,20 +1,40 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useRef } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 
 export default function AuthCallback() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const code = searchParams.get("code");
+  const hasCalledAPI = useRef(false)
 
   useEffect(() => {
-    if (code) {
-      console.log("Success! Discord gave us Auth Code:", code);
-      // TODO: Send this code to our Go Backend!
+    const authenticateUser = async () => {
+      if (!code || hasCalledAPI.current) return;
 
-      setTimeout(() => {
-        navigate("/dashboard");
-      }, 2000);
-    }
+      try {
+        hasCalledAPI.current = true
+        const response = await fetch(
+          `http://localhost:8080/api/auth/discord?code=${code}`,
+        );
+
+        if (!response.ok) {
+          throw new Error("Failed to authenticate with backend");
+        }
+
+        const data = await response.json();
+        localStorage.setItem('token', data.token)
+        localStorage.setItem('user', JSON.stringify(data.user))
+
+        console.log("Login Successful! User:", data.user.username);
+        navigate("/dashboard")
+      } catch (error) {
+        console.error("Auth Error:", error);
+        hasCalledAPI.current = false;
+        navigate("/");
+      }
+    };
+
+    authenticateUser();
   }, [code, navigate]);
 
   return (
