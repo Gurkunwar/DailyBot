@@ -61,3 +61,31 @@ func (s *Server) HandleGetManagedStandups(dg *discordgo.Session) http.HandlerFun
 		json.NewEncoder(w).Encode(response)
 	}
 }
+
+func (s *Server) HandleCreateStandup(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var standup models.Standup
+	if err := json.NewDecoder(r.Body).Decode(&standup); err != nil {
+		http.Error(w, "Invalid request payload", http.StatusBadRequest)
+		return
+	}
+
+	managerID := r.Context().Value(UserIDKey).(string)
+	standup.ManagerID = managerID
+
+	if err := s.StandupService.CreateStandup(standup); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	s.StandupService.AddMemberToStandup(managerID, standup.ID)
+
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(map[string]string{
+		"message": "Standup created successfully!",
+	})
+}

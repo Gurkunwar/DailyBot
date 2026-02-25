@@ -1,27 +1,30 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import Sidebar from "../components/Sidebar";
+import CreateStandupModal from "../components/CreateStandupModel";
 
 export default function MyStandups() {
   const [standups, setStandups] = useState([]);
+  const [isModalOpen, setIsModalOpen] = useState(false);
   const token = localStorage.getItem("token");
 
-  useEffect(() => {
-    const fetchStandups = async () => {
-      try {
-        const response = await fetch(
-          "http://localhost:8080/api/managed-standups",
-          {
-            headers: { Authorization: `Bearer ${token}` },
-          },
-        );
-        const data = await response.json();
-        setStandups(data);
-      } catch (error) {
-        console.error("Failed to load standups:", error);
-      }
-    };
-    fetchStandups();
+  const fetchStandups = useCallback(async () => {
+    try {
+      const response = await fetch(
+        "http://localhost:8080/api/managed-standups",
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        },
+      );
+      const data = await response.json();
+      setStandups(data);
+    } catch (error) {
+      console.error("Failed to load standups:", error);
+    }
   }, [token]);
+
+  useEffect(() => {
+    fetchStandups();
+  }, [fetchStandups]);
 
   return (
     <div className="flex h-screen bg-[#313338] text-white overflow-hidden font-sans">
@@ -31,12 +34,13 @@ export default function MyStandups() {
           <h1 className="text-lg font-bold">My Standups</h1>
         </header>
 
-        <div className="flex-1 overflow-y-auto p-8">
+        <div className="flex-1 overflow-y-auto p-8 relative">
           <div className="flex justify-between items-center mb-8">
             <h2 className="text-2xl font-bold">Managed Standups</h2>
             <button
+              onClick={() => setIsModalOpen(true)}
               className="bg-[#5865F2] hover:bg-[#4752C4] px-4 py-2 rounded font-semibold text-sm 
-            transition-colors"
+            transition-colors cursor-pointer"
             >
               + New Standup
             </button>
@@ -92,6 +96,12 @@ export default function MyStandups() {
           </div>
         </div>
       </main>
+
+      <CreateStandupModal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        onRefresh={fetchStandups}
+      />
     </div>
   );
 }

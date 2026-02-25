@@ -77,7 +77,13 @@ func HandleDiscordLogin(db *gorm.DB) http.HandlerFunc {
 		json.NewDecoder(userResp.Body).Decode(&discordUser)
 
 		var user models.UserProfile
-		db.FirstOrCreate(&user, models.UserProfile{UserID: discordUser.ID})
+		err = db.Where(models.UserProfile{UserID: discordUser.ID}).Assign(models.UserProfile{
+			DiscordToken: tokenRes.AccessToken,
+		}).FirstOrCreate(&user).Error
+
+		if err != nil {
+			// Handle database error
+		}
 
 		token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
 			"user_id":  discordUser.ID,

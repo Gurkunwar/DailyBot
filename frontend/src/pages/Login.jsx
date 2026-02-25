@@ -6,8 +6,7 @@ export default function Login() {
     const redirectUri = import.meta.env.VITE_DISCORD_REDIRECT_URI;
     const scope = "identify guilds";
 
-    const discordAuthUrl = `https://discord.com/api/oauth2/authorize?client_id=${clientId}&
-        redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=${encodeURIComponent(scope)}`;
+    const discordAuthUrl = `https://discord.com/api/oauth2/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=${encodeURIComponent(scope)}&prompt=consent`;
     window.location.href = discordAuthUrl;
   };
 
