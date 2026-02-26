@@ -18,7 +18,7 @@ export default function MyStandups() {
         },
       });
       const data = await response.json();
-      setStandups(data);
+      setStandups(data || []);
     } catch (error) {
       console.error("Failed to load teams:", error);
     }

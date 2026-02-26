@@ -28,7 +28,7 @@ export default function Dashboard() {
           },
         });
         const data = await response.json();
-        setStandups(data);
+        setStandups(data || []);
       } catch (error) {
         console.error("Failed to load teams:", error);
       }
@@ -54,7 +54,7 @@ export default function Dashboard() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
             <StatCard
               title="Active Standups"
-              value={standups.length.toString()}
+              value={(standups?.length || 0).toString()}
               subtitle="Managing 12 members"
             />
             <StatCard
