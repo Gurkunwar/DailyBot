@@ -18,53 +18,58 @@ func (s *StandupService) StartTimezoneWorker() {
 }
 
 func (s *StandupService) CheckAndTriggerStandups() {
-    var standups []models.Standup
+	var standups []models.Standup
 
-    if err := s.DB.Preload("Participants").Find(&standups).Error; err != nil {
-        log.Println("Error fetching standups:", err)
-        return
-    }
+	if err := s.DB.Preload("Participants").Find(&standups).Error; err != nil {
+		log.Println("Error fetching standups:", err)
+		return
+	}
 
-    for _, standup := range standups {
-        timeStr := standup.Time
-        if timeStr == "" {
-            timeStr = "09:00"
-        }
+	for _, standup := range standups {
+		timeStr := standup.Time
+		if timeStr == "" {
+			timeStr = "09:00"
+		}
 
 		var targetHour, targetMinute int
-        _, err := fmt.Sscanf(standup.Time, "%d:%d", &targetHour, &targetMinute)
-        if err != nil {
-            log.Printf("Invalid time format for standup %s: %s", standup.Name, standup.Time)
-            continue
-        }
+		_, err := fmt.Sscanf(timeStr, "%d:%d", &targetHour, &targetMinute)
+		if err != nil {
+			log.Printf("Invalid time format for standup %s: %s", standup.Name, timeStr)
+			continue
+		}
 
-        for _, user := range standup.Participants {
-            if user.Timezone == "" {
-                continue
-            }
+		for _, user := range standup.Participants {
+			tz := user.Timezone
+			if tz == "" {
+				tz = "UTC"
+			}
 
-            loc, err := time.LoadLocation(user.Timezone)
-            if err != nil {
-                continue
-            }
-            userLocalTime := time.Now().In(loc)
-            
-            if userLocalTime.Hour() == targetHour && userLocalTime.Minute() == targetMinute {
-                today := userLocalTime.Format("2006-01-02")
-                var history models.StandupHistory
-                result := s.DB.Where("user_id = ? AND standup_id = ? AND date = ?",
-				 user.UserID, standup.ID, today).First(&history)
+			loc, err := time.LoadLocation(tz)
+			if err != nil {
+				log.Printf("⚠️ Warning: Unknown timezone '%s' for user %s. Falling back to UTC.", tz, user.UserID)
+				loc = time.UTC
+			}
 
-                if result.Error != nil {
-                    log.Printf("🔔 Pinging %s for standup: %s", user.UserID, standup.Name)
-                    channel, err := s.Session.UserChannelCreate(user.UserID)
-                    if err == nil {
-                        s.Session.ChannelMessageSend(channel.ID, 
+			userLocalTime := time.Now().In(loc)
+
+			if userLocalTime.Hour() == targetHour && userLocalTime.Minute() == targetMinute {
+				today := userLocalTime.Format("2006-01-02")
+				
+				var history models.StandupHistory
+				result := s.DB.Where("user_id = ? AND standup_id = ? AND date = ?",
+					user.UserID, standup.ID, today).First(&history)
+
+				if result.Error != nil {
+					log.Printf("🔔 Pinging %s for standup: %s", user.UserID, standup.Name)
+					channel, err := s.Session.UserChannelCreate(user.UserID)
+					if err == nil {
+						s.Session.ChannelMessageSend(channel.ID,
 							fmt.Sprintf("🔔 **Hey!** It's time for your **%s** standup.", standup.Name))
-                        s.TriggerFunc(s.Session, user.UserID, standup.GuildID, "", standup.ID)
-                    }
-                }
-            }
-        }
-    }
+						
+						s.TriggerFunc(s.Session, user.UserID, standup.GuildID, "", standup.ID)
+					}
+				}
+			}
+		}
+	}
 }

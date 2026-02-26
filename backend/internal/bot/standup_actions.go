@@ -210,6 +210,109 @@ func (h *BotHanlder) handleCreateStandup(s *discordgo.Session, i *discordgo.Inte
 	})
 }
 
+func (h *BotHanlder) handleEditStandup(session *discordgo.Session, intr *discordgo.InteractionCreate) {
+	options := intr.ApplicationCommandData().Options
+
+	var userID string
+	if intr.Member != nil {
+		userID = intr.Member.User.ID
+	} else {
+		userID = intr.User.ID
+	}
+
+	optionMap := make(map[string]*discordgo.ApplicationCommandInteractionDataOption, len(options))
+	for _, opt := range options {
+		optionMap[opt.Name] = opt
+	}
+
+	standupName := optionMap["standup_name"].StringValue()
+
+	var standup models.Standup
+	result := h.DB.Where("guild_id = ? AND name = ?", intr.GuildID, standupName).First(&standup)
+	if result.Error != nil {
+		session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
+			Type: discordgo.InteractionResponseChannelMessageWithSource,
+			Data: &discordgo.InteractionResponseData{
+				Content: fmt.Sprintf("❌ Standup named **%s** not found in this server.", standupName),
+				Flags:   discordgo.MessageFlagsEphemeral,
+			},
+		})
+		return
+	}
+
+	if standup.ManagerID != userID {
+		session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
+			Type: discordgo.InteractionResponseChannelMessageWithSource,
+			Data: &discordgo.InteractionResponseData{
+				Content: "⛔ Only the manager who created this standup can edit it.",
+				Flags:   discordgo.MessageFlagsEphemeral,
+			},
+		})
+		return
+	}
+
+	updatedFields := make([]string, 0)
+
+	if opt, ok := optionMap["new_channel"]; ok {
+		standup.ReportChannelID = opt.ChannelValue(session).ID
+		updatedFields = append(updatedFields, "Report Channel")
+	}
+
+	if opt, ok := optionMap["new_questions"]; ok {
+		questionsRaw := opt.StringValue()
+		rawList := strings.Split(questionsRaw, ";")
+		var cleanQuestions []string
+		for _, q := range rawList {
+			cleanQ := strings.TrimSpace(q)
+			if cleanQ != "" {
+				cleanQuestions = append(cleanQuestions, cleanQ)
+			}
+		}
+		if len(cleanQuestions) > 0 {
+			standup.Questions = cleanQuestions
+			updatedFields = append(updatedFields, "Questions")
+		}
+	}
+
+	if opt, ok := optionMap["new_time"]; ok {
+		standup.Time = opt.StringValue()
+		updatedFields = append(updatedFields, "Trigger Time")
+	}
+
+	if len(updatedFields) == 0 {
+		session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
+			Type: discordgo.InteractionResponseChannelMessageWithSource,
+			Data: &discordgo.InteractionResponseData{
+				Content: "ℹ️ No changes were provided to update.",
+				Flags:   discordgo.MessageFlagsEphemeral,
+			},
+		})
+		return
+	}
+
+	if err := h.DB.Save(&standup).Error; err != nil {
+		session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
+			Type: discordgo.InteractionResponseChannelMessageWithSource,
+			Data: &discordgo.InteractionResponseData{
+				Content: "❌ Failed to save updates to the database.",
+				Flags:   discordgo.MessageFlagsEphemeral,
+			},
+		})
+		return
+	}
+
+	responseMsg := fmt.Sprintf("✅ **%s** has been successfully updated!\n*Changes made to:* %s",
+		standup.Name,
+		strings.Join(updatedFields, ", "))
+
+	session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseChannelMessageWithSource,
+		Data: &discordgo.InteractionResponseData{
+			Content: responseMsg,
+		},
+	})
+}
+
 func (h *BotHanlder) handleDeleteStandup(session *discordgo.Session, intr *discordgo.InteractionCreate) {
 	standupName := intr.ApplicationCommandData().Options[0].StringValue()
 
@@ -300,15 +403,15 @@ func (h *BotHanlder) handleAddMember(session *discordgo.Session, intr *discordgo
 	}
 
 	if err := h.StandupService.AddMemberToStandup(targetUser.ID, standup.ID); err != nil {
-        session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
-            Type: discordgo.InteractionResponseChannelMessageWithSource,
-            Data: &discordgo.InteractionResponseData{
-                Content: "❌ Failed to add member.",
-                Flags:   discordgo.MessageFlagsEphemeral,
-            },
-        })
-        return
-    }
+		session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
+			Type: discordgo.InteractionResponseChannelMessageWithSource,
+			Data: &discordgo.InteractionResponseData{
+				Content: "❌ Failed to add member.",
+				Flags:   discordgo.MessageFlagsEphemeral,
+			},
+		})
+		return
+	}
 
 	session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseChannelMessageWithSource,
@@ -356,15 +459,15 @@ func (h *BotHanlder) handleRemoveMember(session *discordgo.Session, intr *discor
 	}
 
 	if err := h.StandupService.RemoveMemberFromStandup(targetUser.ID, standup.ID); err != nil {
-        session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
-            Type: discordgo.InteractionResponseChannelMessageWithSource,
-            Data: &discordgo.InteractionResponseData{
-                Content: "❌ Failed to remove member.",
-                Flags:   discordgo.MessageFlagsEphemeral,
-            },
-        })
-        return
-    }
+		session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
+			Type: discordgo.InteractionResponseChannelMessageWithSource,
+			Data: &discordgo.InteractionResponseData{
+				Content: "❌ Failed to remove member.",
+				Flags:   discordgo.MessageFlagsEphemeral,
+			},
+		})
+		return
+	}
 
 	session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseChannelMessageWithSource,
@@ -528,7 +631,7 @@ func (h *BotHanlder) startQuestionFlow(session *discordgo.Session, channelID, us
 					discordgo.Button{
 						Label:    "Fill Daily Standup",
 						Style:    discordgo.PrimaryButton,
-						CustomID: "open_standup_modal",
+						CustomID: fmt.Sprintf("open_standup_modal_%d", standup.ID),
 					},
 				},
 			},

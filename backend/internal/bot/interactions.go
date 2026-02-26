@@ -12,22 +12,37 @@ import (
 )
 
 func (h *BotHanlder) handleTimezoneSelection(session *discordgo.Session, intr *discordgo.InteractionCreate) {
-	selectedTZ := intr.MessageComponentData().Values[0]
-	userID := intr.User.ID
-	if userID == "" && intr.Member != nil {
+	var userID string
+	if intr.Member != nil {
 		userID = intr.Member.User.ID
+	} else if intr.User != nil {
+		userID = intr.User.ID
+	} else if intr.Message != nil && intr.Message.Author != nil {
+		userID = intr.Message.Author.ID
 	}
+
+	if userID == "" {
+		log.Println("Could not determine UserID for timezone selection")
+		session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
+			Type: discordgo.InteractionResponseChannelMessageWithSource,
+			Data: &discordgo.InteractionResponseData{
+				Content: "❌ Something went wrong identifying your user account.",
+				Flags:   discordgo.MessageFlagsEphemeral,
+			},
+		})
+		return
+	}
+
+	data := intr.MessageComponentData()
+	if len(data.Values) == 0 {
+		return
+	}
+	selectedTZ := data.Values[0]
 
 	var profile models.UserProfile
 	h.DB.Where(models.UserProfile{UserID: userID}).FirstOrCreate(&profile)
 	profile.Timezone = selectedTZ
 	h.DB.Save(&profile)
-
-	state, err := store.GetState(h.Redis, userID)
-	if err != nil || state.StandupID == 0 {
-		log.Println("Error fetching state after TZ selection:", err)
-		return
-	}
 
 	session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseUpdateMessage,
@@ -36,6 +51,13 @@ func (h *BotHanlder) handleTimezoneSelection(session *discordgo.Session, intr *d
 			Components: []discordgo.MessageComponent{},
 		},
 	})
+
+	state, err := store.GetState(h.Redis, userID)
+	if err == nil && state.StandupID != 0 {
+		h.InitiateStandup(session, userID, state.GuildID, intr.ChannelID, state.StandupID)
+	} else {
+		log.Println("No pending standup state found after timezone selection.")
+	}
 }
 
 func (h *BotHanlder) OnInteraction(session *discordgo.Session, intr *discordgo.InteractionCreate) {
@@ -67,6 +89,8 @@ func (h *BotHanlder) OnInteraction(session *discordgo.Session, intr *discordgo.I
 			h.handleSetChannel(session, intr)
 		case "create-standup":
 			h.handleCreateStandup(session, intr)
+		case "edit-standup":
+			h.handleEditStandup(session, intr)
 		case "delete-standup":
 			h.handleDeleteStandup(session, intr)
 		case "add-member":
@@ -78,13 +102,24 @@ func (h *BotHanlder) OnInteraction(session *discordgo.Session, intr *discordgo.I
 		case "timezone":
 			h.sendTimezoneMenu(session, intr.ChannelID, userID, 0)
 		}
+	// case discordgo.InteractionMessageComponent:
+	// 	switch intr.MessageComponentData().CustomID {
+	// 	case "open_standup_modal":
+	// 		h.openStandupModal(session, intr)
+	// 	case "select_tz":
+	// 		h.handleTimezoneSelection(session, intr)
+	// 	case "select_standup_join":
+	// 		h.handleStandupSelection(session, intr)
+	// 	}
 	case discordgo.InteractionMessageComponent:
-		switch intr.MessageComponentData().CustomID {
-		case "open_standup_modal":
-			h.openStandupModal(session, intr)
-		case "select_tz":
+		customID := intr.MessageComponentData().CustomID
+
+		if strings.HasPrefix(customID, "open_standup_modal_") {
+			idStr := strings.TrimPrefix(customID, "open_standup_modal_")
+			h.openStandupModal(session, intr, idStr) // Pass it to your modal function
+		} else if customID == "select_tz" {
 			h.handleTimezoneSelection(session, intr)
-		case "select_standup_join":
+		} else if customID == "select_standup_join" {
 			h.handleStandupSelection(session, intr)
 		}
 	case discordgo.InteractionModalSubmit:
@@ -94,17 +129,71 @@ func (h *BotHanlder) OnInteraction(session *discordgo.Session, intr *discordgo.I
 	}
 }
 
-func (h *BotHanlder) openStandupModal(session *discordgo.Session, intr *discordgo.InteractionCreate) {
-	state, err := store.GetState(h.Redis, intr.User.ID)
-	if err != nil {
-		return
-	}
+// func (h *BotHanlder) openStandupModal(session *discordgo.Session, intr *discordgo.InteractionCreate) {
+// 	state, err := store.GetState(h.Redis, intr.User.ID)
+// 	if err != nil {
+// 		return
+// 	}
+
+// 	var standup models.Standup
+// 	if err := h.DB.First(&standup, state.StandupID).Error; err != nil {
+// 		log.Println("Error fetching standup for modal:", err)
+// 		return
+// 	}
+
+// 	var components []discordgo.MessageComponent
+// 	for i, question := range standup.Questions {
+// 		if i >= 5 {
+// 			break
+// 		}
+
+// 		components = append(components, discordgo.ActionsRow{
+// 			Components: []discordgo.MessageComponent{
+// 				discordgo.TextInput{
+// 					CustomID:    fmt.Sprintf("answer_%d", i),
+// 					Label:       question,
+// 					Style:       discordgo.TextInputParagraph,
+// 					Required:    true,
+// 					Placeholder: "Type your answer here...",
+// 				},
+// 			},
+// 		})
+// 	}
+
+// 	err = session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
+// 		Type: discordgo.InteractionResponseModal,
+// 		Data: &discordgo.InteractionResponseData{
+// 			CustomID:   "standup_modal",
+// 			Title:      fmt.Sprintf("%s Submission", standup.Name),
+// 			Components: components,
+// 		},
+// 	})
+
+// 	if err != nil {
+// 		log.Println("Error opening modal:", err)
+// 	}
+// }
+
+func (h *BotHanlder) openStandupModal(session *discordgo.Session,
+	intr *discordgo.InteractionCreate,
+	standupIDStr string) {
+		
+	var standupID uint
+	fmt.Sscanf(standupIDStr, "%d", &standupID)
 
 	var standup models.Standup
-	if err := h.DB.First(&standup, state.StandupID).Error; err != nil {
+	if err := h.DB.First(&standup, standupID).Error; err != nil {
 		log.Println("Error fetching standup for modal:", err)
 		return
 	}
+
+	state := models.StandupState{
+		UserID:    intr.User.ID,
+		GuildID:   standup.GuildID,
+		StandupID: standup.ID,
+		Answers:   []string{},
+	}
+	store.SaveState(h.Redis, intr.User.ID, state)
 
 	var components []discordgo.MessageComponent
 	for i, question := range standup.Questions {
@@ -125,7 +214,7 @@ func (h *BotHanlder) openStandupModal(session *discordgo.Session, intr *discordg
 		})
 	}
 
-	err = session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
+	err := session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseModal,
 		Data: &discordgo.InteractionResponseData{
 			CustomID:   "standup_modal",
@@ -190,6 +279,7 @@ func (h *BotHanlder) handleAutocomplete(session *discordgo.Session, intr *discor
 		data.Name == "add-member" ||
 		data.Name == "remove-member" ||
 		data.Name == "set-channel" ||
+		data.Name == "edit-standup" ||
 		data.Name == "history" {
 
 		var userID string

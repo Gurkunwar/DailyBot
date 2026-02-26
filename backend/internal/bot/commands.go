@@ -82,6 +82,37 @@ var Commands = []*discordgo.ApplicationCommand{
 		},
 	},
 	{
+		Name:        "edit-standup",
+		Description: "Edit an existing standup team (Admin only)",
+		Options: []*discordgo.ApplicationCommandOption{
+			{
+				Type:         discordgo.ApplicationCommandOptionString,
+				Name:         "standup_name",
+				Description:  "The exact name of the standup to edit",
+				Required:     true,
+				Autocomplete: true,
+			},
+			{
+				Type:        discordgo.ApplicationCommandOptionChannel,
+				Name:        "new_channel",
+				Description: "Change where reports should be posted",
+				Required:    false,
+			},
+			{
+				Type:        discordgo.ApplicationCommandOptionString,
+				Name:        "new_questions",
+				Description: "New questions separated by a semicolon (;)",
+				Required:    false,
+			},
+			{
+				Type:        discordgo.ApplicationCommandOptionString,
+				Name:        "new_time",
+				Description: "New time to trigger standup (HH:MM in 24h format, e.g. 09:30)",
+				Required:    false,
+			},
+		},
+	},
+	{
 		Name:        "delete-standup",
 		Description: "Permanently delete an existing standup team (Admin only)",
 		Options: []*discordgo.ApplicationCommandOption{
@@ -133,29 +164,29 @@ var Commands = []*discordgo.ApplicationCommand{
 		},
 	},
 	{
-		Name: "history",
+		Name:        "history",
 		Description: "View past standup reports",
 		Options: []*discordgo.ApplicationCommandOption{
-            {
-                Type:        discordgo.ApplicationCommandOptionUser,
-                Name:        "user",
-                Description: "The user whose history you want to see",
-                Required:    true,
-            },
-            {
-                Type:         discordgo.ApplicationCommandOptionString,
-                Name:         "standup_name",
-                Description:  "The standup team",
-                Required:     true,
-                Autocomplete: true,
-            },
-            {
-                Type:        discordgo.ApplicationCommandOptionInteger,
-                Name:        "days",
-                Description: "Number of days to look back (default 5, max 10)",
-                Required:    false,
-            },
-        },
+			{
+				Type:        discordgo.ApplicationCommandOptionUser,
+				Name:        "user",
+				Description: "The user whose history you want to see",
+				Required:    true,
+			},
+			{
+				Type:         discordgo.ApplicationCommandOptionString,
+				Name:         "standup_name",
+				Description:  "The standup team",
+				Required:     true,
+				Autocomplete: true,
+			},
+			{
+				Type:        discordgo.ApplicationCommandOptionInteger,
+				Name:        "days",
+				Description: "Number of days to look back (default 5, max 10)",
+				Required:    false,
+			},
+		},
 	},
 }
 
