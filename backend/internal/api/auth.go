@@ -77,7 +77,11 @@ func HandleDiscordLogin(db *gorm.DB) http.HandlerFunc {
 		json.NewDecoder(userResp.Body).Decode(&discordUser)
 
 		var user models.UserProfile
-		err = db.Where(models.UserProfile{UserID: discordUser.ID}).Assign(models.UserProfile{
+		err = db.Where(models.UserProfile{
+			UserID:   discordUser.ID,
+			Username: discordUser.Username,
+			Avatar:   discordUser.Avatar,
+		}).Assign(models.UserProfile{
 			DiscordToken: tokenRes.AccessToken,
 		}).FirstOrCreate(&user).Error
 
@@ -104,4 +108,23 @@ func HandleDiscordLogin(db *gorm.DB) http.HandlerFunc {
 			"user":  discordUser,
 		})
 	}
+}
+
+func (s *Server) HandleGetMe(w http.ResponseWriter, r *http.Request) {
+    userID := r.Context().Value(UserIDKey).(string)
+
+    var user models.UserProfile
+    if err := s.DB.Where("user_id = ?", userID).First(&user).Error; err != nil {
+        http.Error(w, "User not found", http.StatusNotFound)
+        return
+    }
+
+    userDTO := MemberDTO{
+        ID:       user.UserID,
+        Username: user.Username,
+        Avatar:   user.Avatar,
+    }
+
+    w.Header().Set("Content-Type", "application/json")
+    json.NewEncoder(w).Encode(userDTO)
 }

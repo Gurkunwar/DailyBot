@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/Gurkunwar/dailybot/internal/api/dtos"
 	"github.com/Gurkunwar/dailybot/internal/models"
@@ -259,4 +260,31 @@ func (s *Server) HandleGetStandup(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(standup)
+}
+
+func (s *Server) HandleGetDashboardStats(w http.ResponseWriter, r *http.Request) {
+    managerID := r.Context().Value(UserIDKey).(string)
+    
+    var stats struct {
+        TotalTeams      int64 `json:"total_teams"`
+        TotalMembers    int64 `json:"total_members"`
+        RecentReports   int64 `json:"recent_reports"`
+    }
+
+    s.DB.Model(&models.Standup{}).Where("manager_id = ?", managerID).Count(&stats.TotalTeams)
+
+    s.DB.Table("standup_participants").
+        Joins("JOIN standups ON standups.id = standup_participants.standup_id").
+        Where("standups.manager_id = ?", managerID).
+        Distinct("user_profile_user_id").
+        Count(&stats.TotalMembers)
+
+    lastWeek := time.Now().AddDate(0, 0, -7).Format("2006-01-02")
+    s.DB.Model(&models.StandupHistory{}).
+        Joins("JOIN standups ON standups.id = standup_histories.standup_id").
+        Where("standups.manager_id = ? AND standup_histories.date >= ?", managerID, lastWeek).
+        Count(&stats.RecentReports)
+
+    w.Header().Set("Content-Type", "application/json")
+    json.NewEncoder(w).Encode(stats)
 }

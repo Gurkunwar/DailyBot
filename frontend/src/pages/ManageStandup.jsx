@@ -1,128 +1,62 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react"; // Notice: useEffect is gone!
 import { useParams, useNavigate } from "react-router-dom";
 import Sidebar from "../components/Sidebar";
 import MembersTab from "./tabs/MembersTab";
 import SettingsTab from "./tabs/SettingsTab";
 import HistoryTab from "./tabs/HistoryTab";
-// import HistoryTab from "./tabs/HistoryTab";
+
+import {
+  useGetStandupByIdQuery,
+  useGetGuildMembersQuery,
+  useGetGuildChannelsQuery,
+  useToggleMemberMutation,
+  useUpdateStandupMutation,
+} from "../store/apiSlice";
 
 export default function ManageStandup() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState("members");
+  const { data: standup, isLoading: isStandupLoading } =
+    useGetStandupByIdQuery(id);
+  const skipSecondaryFetches = !standup?.guild_id;
 
-  const [standup, setStandup] = useState(null);
-  const [guildMembers, setGuildMembers] = useState([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [channels, setChannels] = useState([]);
-  const [isSaving, setIsSaving] = useState(false);
+  const { data: guildMembers = [], isLoading: isMembersLoading } =
+    useGetGuildMembersQuery(standup?.guild_id, { skip: skipSecondaryFetches });
 
-  const token = localStorage.getItem("token");
+  const { data: channels = [] } = useGetGuildChannelsQuery(standup?.guild_id, {
+    skip: skipSecondaryFetches,
+  });
 
-  const fetchStandupData = async () => {
-    try {
-      const res = await fetch(
-        `http://localhost:8080/api/standups/get?id=${id}`,
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        },
-      );
-      if (res.ok) {
-        const data = await res.json();
-        setStandup(data);
-        return data.guild_id;
-      }
-    } catch (err) {
-      console.error("Failed to load standup", err);
-    }
-    return null;
-  };
+  const isLoading = isStandupLoading || isMembersLoading;
 
-  const fetchGuildMembers = async (guildId) => {
-    try {
-      const res = await fetch(
-        `http://localhost:8080/api/guild-members?guild_id=${guildId}`,
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        },
-      );
-      if (res.ok) {
-        const data = await res.json();
-        setGuildMembers(data || []);
-      }
-    } catch (err) {
-      console.error("Failed to load members", err);
-    }
-  };
-
-  const fetchGuildChannels = async (guildId) => {
-    try {
-      const res = await fetch(
-        `http://localhost:8080/api/guild-channels?guild_id=${guildId}`,
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        },
-      );
-      if (res.ok) setChannels((await res.json()) || []);
-    } catch (err) {
-      console.error("Failed to load channels", err);
-    }
-  };
-
-  useEffect(() => {
-    setIsLoading(true);
-    fetchStandupData().then((guildId) => {
-      if (guildId) {
-        fetchGuildMembers(guildId);
-        fetchGuildChannels(guildId);
-      }
-      setIsLoading(false);
-    });
-  }, [id, token]);
-
-  const updateStandup = async (updatedData) => {
-    setIsSaving(true);
-    try {
-      const res = await fetch("http://localhost:8080/api/standups/update", {
-        method: "POST", // or PUT
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        // Pass the standup ID along with the new data
-        body: JSON.stringify({ id: parseInt(id), ...updatedData }),
-      });
-
-      if (res.ok) {
-        fetchStandupData(); // Refresh the header name if it changed!
-        alert("Settings saved successfully!");
-      } else {
-        alert("Failed to save settings.");
-      }
-    } catch (err) {
-      console.error("Failed to update standup", err);
-    }
-    setIsSaving(false);
-  };
+  const [toggleMemberMutation] = useToggleMemberMutation();
+  const [updateStandupMutation, { isLoading: isSaving }] =
+    useUpdateStandupMutation();
 
   const toggleMember = async (userId, isCurrentlyMember) => {
-    const endpoint = isCurrentlyMember ? "remove-member" : "add-member";
     try {
-      const res = await fetch(
-        `http://localhost:8080/api/standups/${endpoint}`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({ standup_id: parseInt(id), user_id: userId }),
-        },
-      );
-
-      if (res.ok) fetchStandupData();
+      await toggleMemberMutation({
+        standupId: id,
+        userId,
+        isCurrentlyMember,
+      }).unwrap();
     } catch (err) {
       console.error("Failed to toggle member", err);
+    }
+  };
+
+  const updateStandup = async (updatedData) => {
+    try {
+      await updateStandupMutation({
+        id: parseInt(id),
+        ...updatedData,
+      }).unwrap();
+
+      alert("Settings saved successfully!");
+    } catch (err) {
+      console.error("Failed to update standup", err);
+      alert("Failed to save settings.");
     }
   };
 
@@ -141,7 +75,8 @@ export default function ManageStandup() {
           <div className="flex items-center gap-4 mb-6">
             <button
               onClick={() => navigate("/standups")}
-              className="text-[#99AAB5] hover:text-white transition-colors flex items-center gap-1 text-sm font-semibold bg-[#2b2d31] px-3 py-1.5 rounded-md border border-[#1e1f22]"
+              className="text-[#99AAB5] hover:text-white transition-colors flex items-center gap-1 text-sm 
+              font-semibold bg-[#2b2d31] px-3 py-1.5 rounded-md border border-[#1e1f22]"
             >
               ← Back
             </button>
