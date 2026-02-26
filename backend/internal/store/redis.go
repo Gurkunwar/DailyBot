@@ -16,11 +16,14 @@ func InitRedis() (*redis.Client, error) {
 		addr = "localhost:6379"
 	}
 
-	rdb := redis.NewClient(&redis.Options{
-		Addr: addr,
-	})
+	opts, err := redis.ParseURL(addr)
+	if err != nil {
+		return nil, err
+	}
 
-	err := rdb.Ping(context.Background()).Err()
+	rdb := redis.NewClient(opts)
+
+	err = rdb.Ping(context.Background()).Err()
 	if err != nil {
 		return nil, err
 	}

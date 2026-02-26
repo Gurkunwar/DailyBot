@@ -8,7 +8,7 @@ import (
 )
 
 func NewSession() (*discordgo.Session, error) {
-	dg, err := discordgo.New("Bot " + os.Getenv("DISCORD_TOKEN"))
+	dg, err := discordgo.New("Bot " + os.Getenv("DISCORD_BOT_TOKEN"))
 
 	if err != nil {
 		return nil, err
