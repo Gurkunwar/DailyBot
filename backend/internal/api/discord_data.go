@@ -33,6 +33,14 @@ type MemberDTO struct {
 	Avatar   string `json:"avatar"`
 }
 
+type HistoryDTO struct {
+	ID        uint     `json:"id"`
+	UserID    string   `json:"user_id"`
+	Date      string   `json:"date"`
+	Answers   []string `json:"answers"`
+	CreatedAt string   `json:"created_at"`
+}
+
 func (s *Server) HandleGetUserGuilds(w http.ResponseWriter, r *http.Request) {
 	userID := r.Context().Value(UserIDKey).(string)
 

@@ -28,9 +28,11 @@ func (s *Server) Routes() {
 	http.HandleFunc("/api/guild-members", AuthMiddleware(s.HandleGetGuildMembers))
 	
 	http.HandleFunc("/api/standups/create", AuthMiddleware(s.HandleCreateStandup))
+	http.HandleFunc("/api/standups/update", AuthMiddleware(s.HandleUpdateStandup))
 	http.HandleFunc("/api/standups/add-member", AuthMiddleware(s.HandleAddStandupMember))
 	http.HandleFunc("/api/standups/remove-member", AuthMiddleware(s.HandleRemoveStandupMember))
 	http.HandleFunc("/api/standups/get", AuthMiddleware(s.HandleGetStandup))
+	http.HandleFunc("/api/standups/history", AuthMiddleware(s.HandleGetStandupHistory))
 }
 
 func (s *Server) Start(port string) {

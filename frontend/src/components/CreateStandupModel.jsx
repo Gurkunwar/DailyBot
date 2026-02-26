@@ -1,13 +1,12 @@
 import React, { useState, useEffect, useRef } from "react";
 import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
+import TimePicker from "./TimePicker";
 
 export default function CreateStandupModal({ isOpen, onClose, onRefresh }) {
   const [guilds, setGuilds] = useState([]);
   const [channels, setChannels] = useState([]);
   const [errorMsg, setErrorMsg] = useState("");
   const [isLoading, setIsLoading] = useState(true);
-
-  // Custom dropdown state for channels
   const [isChannelDropdownOpen, setIsChannelDropdownOpen] = useState(false);
   const dropdownRef = useRef(null);
 
@@ -21,7 +20,6 @@ export default function CreateStandupModal({ isOpen, onClose, onRefresh }) {
 
   const token = localStorage.getItem("token");
 
-  // Close custom dropdown if clicked outside
   useEffect(() => {
     function handleClickOutside(event) {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
@@ -32,7 +30,6 @@ export default function CreateStandupModal({ isOpen, onClose, onRefresh }) {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // --- API FETCH EFFECTS ---
   useEffect(() => {
     if (isOpen) {
       setIsLoading(true);
@@ -78,7 +75,6 @@ export default function CreateStandupModal({ isOpen, onClose, onRefresh }) {
     }
   }, [formData.guild_id, token]);
 
-  // --- DYNAMIC QUESTION LOGIC ---
   const handleQuestionChange = (index, value) => {
     const newQuestions = [...formData.questions];
     newQuestions[index] = value;
@@ -105,7 +101,6 @@ export default function CreateStandupModal({ isOpen, onClose, onRefresh }) {
 
   if (!isOpen) return null;
 
-  // --- SUBMIT LOGIC ---
   const handleSubmit = async (e) => {
     e.preventDefault();
 
@@ -150,14 +145,16 @@ export default function CreateStandupModal({ isOpen, onClose, onRefresh }) {
     }
   };
 
-  // Helper to find selected channel name
   const selectedChannelName =
     channels.find((c) => c.id === formData.report_channel_id)?.name ||
     "Select a channel...";
 
   return (
     <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50 backdrop-blur-sm">
-      <div className="bg-[#313338] w-full max-w-2xl rounded-xl p-6 md:p-8 border border-[#1e1f22] max-h-[90vh] overflow-y-auto shadow-2xl custom-scrollbar">
+      <div
+        className="bg-[#313338] w-full max-w-2xl rounded-xl p-6 md:p-8 border border-[#1e1f22] max-h-[90vh] 
+      overflow-y-auto shadow-2xl custom-scrollbar"
+      >
         <h2 className="text-2xl font-extrabold mb-6 flex items-center gap-2 text-white">
           <span className="text-[#5865F2]">✨</span> New Standup
         </h2>
@@ -170,7 +167,8 @@ export default function CreateStandupModal({ isOpen, onClose, onRefresh }) {
             </label>
             <input
               type="text"
-              className="w-full bg-[#1e1f22] p-3 rounded-md border border-transparent focus:border-[#5865F2] outline-none text-white text-sm transition-all"
+              className="w-full bg-[#1e1f22] p-3 rounded-md border border-transparent focus:border-[#5865F2] 
+              outline-none text-white text-sm transition-all"
               placeholder="e.g. Backend Engineering Sync"
               value={formData.name}
               onChange={(e) =>
@@ -515,14 +513,11 @@ export default function CreateStandupModal({ isOpen, onClose, onRefresh }) {
             <label className="text-[11px] font-extrabold text-[#99AAB5] uppercase tracking-wider mb-2 block">
               Daily Trigger Time
             </label>
-            <input
-              type="time"
-              className="w-full bg-[#1e1f22] p-3 rounded-md border border-transparent focus:border-[#5865F2] outline-none text-white text-sm transition-all"
+            <TimePicker
               value={formData.time}
-              onChange={(e) =>
-                setFormData({ ...formData, time: e.target.value })
+              onChange={(newTime) =>
+                setFormData({ ...formData, time: newTime })
               }
-              required
             />
           </div>
 
