@@ -102,82 +102,49 @@ func (h *BotHanlder) OnInteraction(session *discordgo.Session, intr *discordgo.I
 		case "timezone":
 			h.sendTimezoneMenu(session, intr.ChannelID, userID, 0)
 		}
-	// case discordgo.InteractionMessageComponent:
-	// 	switch intr.MessageComponentData().CustomID {
-	// 	case "open_standup_modal":
-	// 		h.openStandupModal(session, intr)
-	// 	case "select_tz":
-	// 		h.handleTimezoneSelection(session, intr)
-	// 	case "select_standup_join":
-	// 		h.handleStandupSelection(session, intr)
-	// 	}
 	case discordgo.InteractionMessageComponent:
 		customID := intr.MessageComponentData().CustomID
 
-		if strings.HasPrefix(customID, "open_standup_modal_") {
+		if strings.HasPrefix(customID, "add_next_q_") {
+			var nextQ int
+			fmt.Sscanf(customID, "add_next_q_%d", &nextQ)
+			h.openSingleQuestionModal(session, intr, nextQ)
+		} else if customID == "finalize_create_standup" {
+			h.finalizeCreateStandup(session, intr)
+		} else if strings.HasPrefix(customID, "open_standup_modal_") {
 			idStr := strings.TrimPrefix(customID, "open_standup_modal_")
-			h.openStandupModal(session, intr, idStr) // Pass it to your modal function
+			h.openSingleAnswerModal(session, intr, idStr, 0)
+		} else if strings.HasPrefix(customID, "continue_standup_") {
+			var standupID uint
+			var qIndex int
+			fmt.Sscanf(customID, "continue_standup_%d_%d", &standupID, &qIndex)
+			h.openSingleAnswerModal(session, intr, fmt.Sprintf("%d", standupID), qIndex)
 		} else if customID == "select_tz" {
 			h.handleTimezoneSelection(session, intr)
 		} else if customID == "select_standup_join" {
 			h.handleStandupSelection(session, intr)
 		}
 	case discordgo.InteractionModalSubmit:
-		h.handleModalSubmit(session, intr)
+		customID := intr.ModalSubmitData().CustomID
+		if strings.HasPrefix(customID, "create_q_modal_") {
+			h.handleCreateQuestionSubmit(session, intr, customID)
+		} else if strings.HasPrefix(customID, "standup_answer_modal_") {
+			var standupID uint
+			var qIndex int
+			fmt.Sscanf(customID, "standup_answer_modal_%d_%d", &standupID, &qIndex)
+			h.handleSingleAnswerSubmit(session, intr, standupID, qIndex)
+		}
 	case discordgo.InteractionApplicationCommandAutocomplete:
 		h.handleAutocomplete(session, intr)
 	}
 }
 
-// func (h *BotHanlder) openStandupModal(session *discordgo.Session, intr *discordgo.InteractionCreate) {
-// 	state, err := store.GetState(h.Redis, intr.User.ID)
-// 	if err != nil {
-// 		return
-// 	}
-
-// 	var standup models.Standup
-// 	if err := h.DB.First(&standup, state.StandupID).Error; err != nil {
-// 		log.Println("Error fetching standup for modal:", err)
-// 		return
-// 	}
-
-// 	var components []discordgo.MessageComponent
-// 	for i, question := range standup.Questions {
-// 		if i >= 5 {
-// 			break
-// 		}
-
-// 		components = append(components, discordgo.ActionsRow{
-// 			Components: []discordgo.MessageComponent{
-// 				discordgo.TextInput{
-// 					CustomID:    fmt.Sprintf("answer_%d", i),
-// 					Label:       question,
-// 					Style:       discordgo.TextInputParagraph,
-// 					Required:    true,
-// 					Placeholder: "Type your answer here...",
-// 				},
-// 			},
-// 		})
-// 	}
-
-// 	err = session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
-// 		Type: discordgo.InteractionResponseModal,
-// 		Data: &discordgo.InteractionResponseData{
-// 			CustomID:   "standup_modal",
-// 			Title:      fmt.Sprintf("%s Submission", standup.Name),
-// 			Components: components,
-// 		},
-// 	})
-
-// 	if err != nil {
-// 		log.Println("Error opening modal:", err)
-// 	}
-// }
-
-func (h *BotHanlder) openStandupModal(session *discordgo.Session,
+func (h *BotHanlder) openSingleAnswerModal(
+	session *discordgo.Session,
 	intr *discordgo.InteractionCreate,
-	standupIDStr string) {
-		
+	standupIDStr string,
+	qIndex int) {
+
 	var standupID uint
 	fmt.Sscanf(standupIDStr, "%d", &standupID)
 
@@ -187,77 +154,107 @@ func (h *BotHanlder) openStandupModal(session *discordgo.Session,
 		return
 	}
 
-	state := models.StandupState{
-		UserID:    intr.User.ID,
-		GuildID:   standup.GuildID,
-		StandupID: standup.ID,
-		Answers:   []string{},
-	}
-	store.SaveState(h.Redis, intr.User.ID, state)
-
-	var components []discordgo.MessageComponent
-	for i, question := range standup.Questions {
-		if i >= 5 {
-			break
+	if qIndex == 0 {
+		state := models.StandupState{
+			UserID:    intr.User.ID,
+			GuildID:   standup.GuildID,
+			StandupID: standup.ID,
+			Answers:   []string{},
 		}
+		store.SaveState(h.Redis, intr.User.ID, state)
+	}
 
-		components = append(components, discordgo.ActionsRow{
-			Components: []discordgo.MessageComponent{
-				discordgo.TextInput{
-					CustomID:    fmt.Sprintf("answer_%d", i),
-					Label:       question,
-					Style:       discordgo.TextInputParagraph,
-					Required:    true,
-					Placeholder: "Type your answer here...",
-				},
-			},
-		})
+	questionText := standup.Questions[qIndex]
+
+	label := questionText
+	if len(label) > 45 {
+		label = label[:42] + "..."
+	}
+
+	placeholder := questionText
+	if len(placeholder) > 100 {
+		placeholder = placeholder[:97] + "..."
 	}
 
 	err := session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseModal,
 		Data: &discordgo.InteractionResponseData{
-			CustomID:   "standup_modal",
-			Title:      fmt.Sprintf("%s Submission", standup.Name),
-			Components: components,
+			CustomID: fmt.Sprintf("standup_answer_modal_%d_%d", standup.ID, qIndex),
+			Title:    fmt.Sprintf("%s (%d/%d)", standup.Name, qIndex+1, len(standup.Questions)),
+			Components: []discordgo.MessageComponent{
+				discordgo.ActionsRow{
+					Components: []discordgo.MessageComponent{
+						discordgo.TextInput{
+							CustomID:    "answer_text",
+							Label:       label,
+							Style:       discordgo.TextInputParagraph,
+							Required:    true,
+							Placeholder: placeholder,
+						},
+					},
+				},
+			},
 		},
 	})
 
 	if err != nil {
-		log.Println("Error opening modal:", err)
+		log.Println("Error opening answer modal:", err)
 	}
 }
 
-func (h *BotHanlder) handleModalSubmit(session *discordgo.Session, intr *discordgo.InteractionCreate) {
-	data := intr.ModalSubmitData()
-	var answers []string
+func (h *BotHanlder) handleSingleAnswerSubmit(session *discordgo.Session,
+	intr *discordgo.InteractionCreate,
+	standupID uint,
+	qIndex int) {
 
-	for _, comp := range data.Components {
-		if row, ok := comp.(*discordgo.ActionsRow); ok {
-			if textInput, ok := row.Components[0].(*discordgo.TextInput); ok {
-				answers = append(answers, textInput.Value)
-			}
-		}
-	}
+	answer := intr.ModalSubmitData().Components[0].(*discordgo.ActionsRow).Components[0].(*discordgo.TextInput).Value
 
 	state, err := store.GetState(h.Redis, intr.User.ID)
 	if err != nil {
-		log.Println("Error retrieving state from Redis:", err)
+		session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
+			Type: discordgo.InteractionResponseChannelMessageWithSource,
+			Data: &discordgo.InteractionResponseData{Content: "❌ Session expired. Please run `/start` to try again.", 
+			Flags: discordgo.MessageFlagsEphemeral},
+		})
 		return
 	}
-	state.Answers = answers
+
+	state.Answers = append(state.Answers, strings.TrimSpace(answer))
+	store.SaveState(h.Redis, intr.User.ID, *state)
+
+	var standup models.Standup
+	h.DB.First(&standup, standupID)
+
+	nextQIndex := qIndex + 1
+
+	if nextQIndex < len(standup.Questions) {
+		session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
+			Type: discordgo.InteractionResponseUpdateMessage,
+			Data: &discordgo.InteractionResponseData{
+				Content: fmt.Sprintf("✅ **Question %d answered!**\n\nReady for question %d?", qIndex+1, nextQIndex+1),
+				Components: []discordgo.MessageComponent{
+					discordgo.ActionsRow{
+						Components: []discordgo.MessageComponent{
+							discordgo.Button{
+								Label:    fmt.Sprintf("Next: Question %d", nextQIndex+1),
+								Style:    discordgo.PrimaryButton,
+								CustomID: fmt.Sprintf("continue_standup_%d_%d", standup.ID, nextQIndex),
+							},
+						},
+					},
+				},
+			},
+		})
+		return
+	}
 
 	session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
-		Type: discordgo.InteractionResponseChannelMessageWithSource,
+		Type: discordgo.InteractionResponseUpdateMessage,
 		Data: &discordgo.InteractionResponseData{
-			Content: "✅ Standup submitted! Your team has been notified.",
+			Content:    "✅ **Standup complete!** Your team has been notified.",
+			Components: []discordgo.MessageComponent{},
 		},
 	})
-
-	if state.GuildID == "" {
-		log.Println("No Guild ID in state")
-		return
-	}
 
 	h.finalizeStandup(session, state)
 	h.Redis.Del(context.Background(), "state:"+intr.User.ID)

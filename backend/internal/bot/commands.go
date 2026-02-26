@@ -61,12 +61,12 @@ var Commands = []*discordgo.ApplicationCommand{
 				Description: "Where reports should be posted",
 				Required:    true,
 			},
-			{
-				Type:        discordgo.ApplicationCommandOptionString,
-				Name:        "questions",
-				Description: "Questions separated by a semicolon (;)",
-				Required:    true,
-			},
+			// {
+			// 	Type:        discordgo.ApplicationCommandOptionString,
+			// 	Name:        "questions",
+			// 	Description: "Questions separated by a semicolon (;)",
+			// 	Required:    true,
+			// },
 			{
 				Type:        discordgo.ApplicationCommandOptionString,
 				Name:        "members",

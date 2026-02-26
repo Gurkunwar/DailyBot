@@ -1,6 +1,7 @@
 package bot
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"strings"
@@ -142,41 +143,144 @@ func (h *BotHanlder) finalizeStandup(s *discordgo.Session, state *models.Standup
 	s.ChannelMessageSendEmbed(standup.ReportChannelID, embed)
 }
 
-func (h *BotHanlder) handleCreateStandup(s *discordgo.Session, i *discordgo.InteractionCreate) {
-	options := i.ApplicationCommandData().Options
+func (h *BotHanlder) handleCreateStandup(session *discordgo.Session, intr *discordgo.InteractionCreate) {
+	options := intr.ApplicationCommandData().Options
 	name := options[0].StringValue()
-	channelID := options[1].ChannelValue(s).ID
-	questionsRaw := options[2].StringValue()
-	membersRaw := options[3].StringValue()
-	standupTime := "9:00"
-
-	if len(options) > 4 {
-		standupTime = options[4].StringValue()
+	channelID := options[1].ChannelValue(session).ID
+	membersRaw := options[2].StringValue()
+	standupTime := "09:00"
+	if len(options) > 3 {
+		standupTime = options[3].StringValue()
 	}
 
-	questions := strings.Split(questionsRaw, ";")
+	tempState := models.StandupState{
+		UserID:  intr.Member.User.ID,
+		GuildID: intr.GuildID,
+		Answers: []string{name, channelID, membersRaw, standupTime},
+	}
+
+	store.SaveState(h.Redis, intr.Member.User.ID+"_create", tempState)
+	h.openSingleQuestionModal(session, intr, 1)
+}
+
+func (h *BotHanlder) openSingleQuestionModal(session *discordgo.Session, intr *discordgo.InteractionCreate, qNum int) {
+	err := session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseModal,
+		Data: &discordgo.InteractionResponseData{
+			CustomID: fmt.Sprintf("create_q_modal_%d", qNum),
+			Title:    fmt.Sprintf("Standup Setup (Question %d)", qNum),
+			Components: []discordgo.MessageComponent{
+				discordgo.ActionsRow{
+					Components: []discordgo.MessageComponent{
+						discordgo.TextInput{
+							CustomID:    "question_text",
+							Label:       fmt.Sprintf("Type Question %d", qNum),
+							Style:       discordgo.TextInputShort,
+							Required:    true,
+							Placeholder: "e.g., What did you accomplish yesterday?",
+						},
+					},
+				},
+			},
+		},
+	})
+
+	if err != nil {
+		log.Println("Error opening single question modal:", err)
+	}
+}
+
+func (h *BotHanlder) handleCreateQuestionSubmit(session *discordgo.Session,
+	intr *discordgo.InteractionCreate,
+	customID string) {
+
+	var currentQNum int
+	fmt.Sscanf(customID, "create_q_modal_%d", &currentQNum)
+
+	newQuestion := intr.ModalSubmitData().Components[0].(*discordgo.ActionsRow).Components[0].(*discordgo.TextInput).Value
+
+	state, err := store.GetState(h.Redis, intr.Member.User.ID+"_create")
+	if err != nil {
+		session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
+			Type: discordgo.InteractionResponseChannelMessageWithSource,
+			Data: &discordgo.InteractionResponseData{Content: "❌ Session expired. Please start over.", 
+			Flags: discordgo.MessageFlagsEphemeral},
+		})
+		return
+	}
+	state.Answers = append(state.Answers, strings.TrimSpace(newQuestion))
+	store.SaveState(h.Redis, intr.Member.User.ID+"_create", *state)
+
+	responseType := discordgo.InteractionResponseChannelMessageWithSource
+	if currentQNum > 1 {
+		responseType = discordgo.InteractionResponseUpdateMessage
+	}
+
+	nextQNum := currentQNum + 1
+
+	session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
+		Type: responseType,
+		Data: &discordgo.InteractionResponseData{
+			Content: fmt.Sprintf("✅ **Question %d saved!**\n> %s\n\nDo you want to add Question %d, or finish creating the team?", currentQNum, newQuestion, nextQNum),
+			Flags:   discordgo.MessageFlagsEphemeral,
+			Components: []discordgo.MessageComponent{
+				discordgo.ActionsRow{
+					Components: []discordgo.MessageComponent{
+						discordgo.Button{
+							Label:    fmt.Sprintf("➕ Add Question %d", nextQNum),
+							Style:    discordgo.SecondaryButton,
+							CustomID: fmt.Sprintf("add_next_q_%d", nextQNum),
+						},
+						discordgo.Button{
+							Label:    "🚀 Finish & Create",
+							Style:    discordgo.SuccessButton,
+							CustomID: "finalize_create_standup",
+						},
+					},
+				},
+			},
+		},
+	})
+}
+
+func (h *BotHanlder) finalizeCreateStandup(session *discordgo.Session, intr *discordgo.InteractionCreate) {
+	state, err := store.GetState(h.Redis, intr.Member.User.ID+"_create")
+	if err != nil || len(state.Answers) < 5 {
+		session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
+			Type: discordgo.InteractionResponseChannelMessageWithSource,
+			Data: &discordgo.InteractionResponseData{Content: "❌ Session expired or no questions added.", 
+			Flags: discordgo.MessageFlagsEphemeral},
+		})
+		return
+	}
+
+	name := state.Answers[0]
+	channelID := state.Answers[1]
+	membersRaw := state.Answers[2]
+	standupTime := state.Answers[3]
+	questions := state.Answers[4:]
 
 	standup := models.Standup{
 		Name:            name,
-		GuildID:         i.GuildID,
-		ManagerID:       i.Member.User.ID,
 		ReportChannelID: channelID,
-		Questions:       questions,
+		GuildID:         intr.GuildID,
+		ManagerID:       intr.Member.User.ID,
 		Time:            standupTime,
+		Questions:       questions,
 	}
 
 	if err := h.StandupService.CreateStandup(standup); err != nil {
-		s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+		session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
 			Type: discordgo.InteractionResponseChannelMessageWithSource,
-			Data: &discordgo.InteractionResponseData{
-				Content: fmt.Sprintf("❌ Failed to create standup: %v", err),
-			},
+			Data: &discordgo.InteractionResponseData{Content: "❌ Failed to create standup."},
 		})
 		return
 	}
 
 	members := strings.Fields(membersRaw)
 	addedCount := 0
+
+	h.DB.Where("guild_id = ? AND name = ?", intr.GuildID, name).First(&standup)
 
 	for _, member := range members {
 		if strings.HasPrefix(member, "<@") && strings.HasSuffix(member, ">") {
@@ -187,7 +291,7 @@ func (h *BotHanlder) handleCreateStandup(s *discordgo.Session, i *discordgo.Inte
 			h.DB.Model(&user).Association("Standups").Append(&standup)
 			addedCount++
 
-			dmChannel, err := s.UserChannelCreate(userID)
+			dmChannel, err := session.UserChannelCreate(userID)
 			if err == nil {
 				welcomeMsg := fmt.Sprintf(
 					"👋 **You've been added to the '%s' Standup!**\n\n"+
@@ -195,17 +299,19 @@ func (h *BotHanlder) handleCreateStandup(s *discordgo.Session, i *discordgo.Inte
 						"Run `/start` here or in the server to begin.",
 					name,
 				)
-				s.ChannelMessageSend(dmChannel.ID, welcomeMsg)
-			} else {
-				fmt.Printf("Could not DM user %s: %v\n", userID, err)
+				session.ChannelMessageSend(dmChannel.ID, welcomeMsg)
 			}
 		}
 	}
 
-	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-		Type: discordgo.InteractionResponseChannelMessageWithSource,
+	h.Redis.Del(context.Background(), "state:"+intr.Member.User.ID+"_create")
+
+	session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseUpdateMessage,
 		Data: &discordgo.InteractionResponseData{
-			Content: fmt.Sprintf("✅ Standup **%s** created with **%d** members!", name, addedCount),
+			Content: fmt.Sprintf("🎉 **Team '%s' created successfully!**\nAdded %d questions and %d members.",
+				standup.Name, len(standup.Questions), addedCount),
+			Components: []discordgo.MessageComponent{},
 		},
 	})
 }
