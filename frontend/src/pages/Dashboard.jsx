@@ -21,14 +21,12 @@ export default function Dashboard() {
   useEffect(() => {
     const fetchTeams = async () => {
       try {
-        const response = await fetch(
-          "http://localhost:8080/api/managed-standups",
-          {
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
+        const API_BASE = import.meta.env.VITE_API_BASE_URL;
+        const response = await fetch(`${API_BASE}/api/managed-standups`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
           },
-        );
+        });
         const data = await response.json();
         setStandups(data);
       } catch (error) {

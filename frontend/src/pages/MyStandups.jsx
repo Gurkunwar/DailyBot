@@ -7,20 +7,20 @@ export default function MyStandups() {
   const [standups, setStandups] = useState([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const token = localStorage.getItem("token");
-  const navigate = useNavigate()
+  const navigate = useNavigate();
 
   const fetchStandups = useCallback(async () => {
     try {
-      const response = await fetch(
-        "http://localhost:8080/api/managed-standups",
-        {
-          headers: { Authorization: `Bearer ${token}` },
+      const API_BASE = import.meta.env.VITE_API_BASE_URL;
+      const response = await fetch(`${API_BASE}/api/managed-standups`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
         },
-      );
+      });
       const data = await response.json();
       setStandups(data);
     } catch (error) {
-      console.error("Failed to load standups:", error);
+      console.error("Failed to load teams:", error);
     }
   }, [token]);
 

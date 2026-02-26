@@ -13,9 +13,8 @@ export default function AuthCallback() {
 
       try {
         hasCalledAPI.current = true
-        const response = await fetch(
-          `http://localhost:8080/api/auth/discord?code=${code}`,
-        );
+        const API_BASE = import.meta.env.VITE_API_BASE_URL;
+        const response = await fetch(`${API_BASE}/api/auth/discord?code=${code}`);
 
         if (!response.ok) {
           throw new Error("Failed to authenticate with backend");
