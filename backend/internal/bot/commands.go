@@ -94,12 +94,6 @@ var Commands = []*discordgo.ApplicationCommand{
 			},
 			{
 				Type:        discordgo.ApplicationCommandOptionString,
-				Name:        "new_questions",
-				Description: "New questions separated by a semicolon (;)",
-				Required:    false,
-			},
-			{
-				Type:        discordgo.ApplicationCommandOptionString,
 				Name:        "new_time",
 				Description: "New time to trigger standup (HH:MM in 24h format, e.g. 09:30)",
 				Required:    false,

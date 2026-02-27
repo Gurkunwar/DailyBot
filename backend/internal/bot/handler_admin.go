@@ -61,7 +61,8 @@ func (h *BotHanlder) finalizeCreateStandup(session *discordgo.Session, intr *dis
 	h.DB.Where("id = ?", intr.GuildID).FirstOrCreate(&guild, models.Guild{GuildID: intr.GuildID})
 
 	var manager models.UserProfile
-	h.DB.Where("user_id = ?", intr.Member.User.ID).FirstOrCreate(&manager, models.UserProfile{UserID: intr.Member.User.ID})
+	h.DB.Where("user_id = ?", intr.Member.User.ID).FirstOrCreate(&manager,
+		models.UserProfile{UserID: intr.Member.User.ID})
 
 	if err := h.StandupService.CreateStandup(standup); err != nil {
 		session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
@@ -128,24 +129,14 @@ func (h *BotHanlder) handleEditStandup(session *discordgo.Session, intr *discord
 	var standup models.Standup
 	result := h.DB.Where("guild_id = ? AND name = ?", intr.GuildID, standupName).First(&standup)
 	if result.Error != nil {
-		session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
-			Type: discordgo.InteractionResponseChannelMessageWithSource,
-			Data: &discordgo.InteractionResponseData{
-				Content: fmt.Sprintf("❌ Standup named **%s** not found in this server.", standupName),
-				Flags:   discordgo.MessageFlagsEphemeral,
-			},
-		})
+		respondWithError(session, intr.Interaction,
+			fmt.Sprintf("Standup named **%s** not found in this server.", standupName))
 		return
 	}
 
 	if standup.ManagerID != userID && !isServerAdmin(intr) {
-		session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
-			Type: discordgo.InteractionResponseChannelMessageWithSource,
-			Data: &discordgo.InteractionResponseData{
-				Content: "⛔ Only the manager who created this standup can edit it.",
-				Flags:   discordgo.MessageFlagsEphemeral,
-			},
-		})
+		respondWithError(session, intr.Interaction,
+			"⛔ Only the manager who created this standup, or a Server Admin, can edit it.")
 		return
 	}
 
@@ -153,60 +144,217 @@ func (h *BotHanlder) handleEditStandup(session *discordgo.Session, intr *discord
 
 	if opt, ok := optionMap["new_channel"]; ok {
 		standup.ReportChannelID = opt.ChannelValue(session).ID
-		updatedFields = append(updatedFields, "Report Channel")
-	}
-
-	if opt, ok := optionMap["new_questions"]; ok {
-		questionsRaw := opt.StringValue()
-		rawList := strings.Split(questionsRaw, ";")
-		var cleanQuestions []string
-		for _, q := range rawList {
-			cleanQ := strings.TrimSpace(q)
-			if cleanQ != "" {
-				cleanQuestions = append(cleanQuestions, cleanQ)
-			}
-		}
-		if len(cleanQuestions) > 0 {
-			standup.Questions = cleanQuestions
-			updatedFields = append(updatedFields, "Questions")
-		}
+		updatedFields = append(updatedFields, fmt.Sprintf("Report Channel (<#%s>)", standup.ReportChannelID))
 	}
 
 	if opt, ok := optionMap["new_time"]; ok {
-		standup.Time = opt.StringValue()
-		updatedFields = append(updatedFields, "Trigger Time")
+		newTime := opt.StringValue()
+		var hTime, mTime int
+		if _, err := fmt.Sscanf(newTime, "%d:%d", &hTime, &mTime); err != nil || hTime < 0 || hTime > 23 || mTime < 0 || mTime > 59 {
+			respondWithError(session, intr.Interaction,
+				"⛔ Invalid time format. Please use HH:MM in 24h format (e.g., 09:30).")
+			return
+		}
+		standup.Time = fmt.Sprintf("%02d:%02d", hTime, mTime)
+		updatedFields = append(updatedFields, fmt.Sprintf("Trigger Time (%s)", standup.Time))
 	}
 
-	if len(updatedFields) == 0 {
-		session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
-			Type: discordgo.InteractionResponseChannelMessageWithSource,
-			Data: &discordgo.InteractionResponseData{
-				Content: "ℹ️ No changes were provided to update.",
-				Flags:   discordgo.MessageFlagsEphemeral,
-			},
-		})
-		return
+	responseMsg := fmt.Sprintf("⚙️ **Managing %s**\n", standup.Name)
+	if len(updatedFields) > 0 {
+		h.DB.Save(&standup)
+		responseMsg += fmt.Sprintf("✅ *Saved changes to:*\n- %s\n\n", strings.Join(updatedFields, "\n- "))
+	} else {
+		responseMsg += "ℹ️ No basic settings were changed.\n\n"
 	}
-
-	if err := h.DB.Save(&standup).Error; err != nil {
-		session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
-			Type: discordgo.InteractionResponseChannelMessageWithSource,
-			Data: &discordgo.InteractionResponseData{
-				Content: "❌ Failed to save updates to the database.",
-				Flags:   discordgo.MessageFlagsEphemeral,
-			},
-		})
-		return
-	}
-
-	responseMsg := fmt.Sprintf("✅ **%s** has been successfully updated!\n*Changes made to:* %s",
-		standup.Name,
-		strings.Join(updatedFields, ", "))
+	responseMsg += "Click the button below to edit your team's daily questions!"
 
 	session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseChannelMessageWithSource,
 		Data: &discordgo.InteractionResponseData{
 			Content: responseMsg,
+			Flags:   discordgo.MessageFlagsEphemeral,
+			Components: []discordgo.MessageComponent{
+				discordgo.ActionsRow{
+					Components: []discordgo.MessageComponent{
+						discordgo.Button{
+							Label:    "📝 Edit Questions",
+							Style:    discordgo.SecondaryButton,
+							CustomID: fmt.Sprintf("open_q_dash_%d", standup.ID),
+						},
+					},
+				},
+			},
+		},
+	})
+}
+
+func (h *BotHanlder) showQuestionDashboard(session *discordgo.Session,
+	intr *discordgo.InteractionCreate, standupID uint, isUpdate bool) {
+
+	var standup models.Standup
+	if err := h.DB.First(&standup, standupID).Error; err != nil {
+		respondWithError(session, intr.Interaction, "Standup not found.")
+		return
+	}
+
+	var qList strings.Builder
+	var options []discordgo.SelectMenuOption
+
+	for i, q := range standup.Questions {
+		qList.WriteString(fmt.Sprintf("**%d.** %s\n", i+1, q))
+
+		label := q
+		if len(label) > 90 {
+			label = label[:87] + "..."
+		}
+		options = append(options, discordgo.SelectMenuOption{
+			Label:       fmt.Sprintf("Edit Question %d", i+1),
+			Description: label,
+			Value:       fmt.Sprintf("%d", i),
+		})
+	}
+
+	if len(standup.Questions) == 0 {
+		qList.WriteString("*No questions yet! Add one below.*\n")
+	}
+
+	var components []discordgo.MessageComponent
+
+	if len(options) > 0 {
+		components = append(components, discordgo.ActionsRow{
+			Components: []discordgo.MessageComponent{
+				discordgo.SelectMenu{
+					CustomID:    fmt.Sprintf("select_q_%d", standup.ID),
+					Placeholder: "Select a question to edit or delete...",
+					Options:     options,
+				},
+			},
+		})
+	}
+
+	components = append(components, discordgo.ActionsRow{
+		Components: []discordgo.MessageComponent{
+			discordgo.Button{
+				Label:    "➕ Add New Question",
+				Style:    discordgo.SuccessButton,
+				CustomID: fmt.Sprintf("add_q_btn_%d", standup.ID),
+			},
+			discordgo.Button{
+				Label:    "✅ Finish & Save",
+				Style:    discordgo.PrimaryButton,
+				CustomID: fmt.Sprintf("finish_q_dash_%d", standup.ID),
+			},
+		},
+	})
+
+	content := fmt.Sprintf("📋 **Managing Questions for %s**\n\n%s\n*💡 To delete a question, select it and completely clear the text box!*",
+		standup.Name, qList.String())
+
+	respType := discordgo.InteractionResponseChannelMessageWithSource
+	if isUpdate {
+		respType = discordgo.InteractionResponseUpdateMessage
+	}
+
+	session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
+		Type: respType,
+		Data: &discordgo.InteractionResponseData{
+			Content:    content,
+			Components: components,
+			Flags:      discordgo.MessageFlagsEphemeral,
+		},
+	})
+}
+
+func (h *BotHanlder) handleEditSingleQuestionPrompt(session *discordgo.Session,
+	intr *discordgo.InteractionCreate, standupID uint, qIndex int) {
+
+	var standup models.Standup
+	h.DB.First(&standup, standupID)
+
+	session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseModal,
+		Data: &discordgo.InteractionResponseData{
+			CustomID: fmt.Sprintf("edit_single_q_%d_%d", standup.ID, qIndex),
+			Title:    fmt.Sprintf("Edit Question %d", qIndex+1),
+			Components: []discordgo.MessageComponent{
+				discordgo.ActionsRow{
+					Components: []discordgo.MessageComponent{
+						discordgo.TextInput{
+							CustomID:  "q_text",
+							Label:     "Question Text (Clear to Delete)",
+							Style:     discordgo.TextInputParagraph,
+							Value:     standup.Questions[qIndex],
+							Required:  false,
+							MaxLength: 300,
+						},
+					},
+				},
+			},
+		},
+	})
+}
+
+func (h *BotHanlder) handleAddQuestionPrompt(session *discordgo.Session, intr *discordgo.InteractionCreate,
+	standupID uint) {
+	session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseModal,
+		Data: &discordgo.InteractionResponseData{
+			CustomID: fmt.Sprintf("add_single_q_%d", standupID),
+			Title:    "Add New Question",
+			Components: []discordgo.MessageComponent{
+				discordgo.ActionsRow{
+					Components: []discordgo.MessageComponent{
+						discordgo.TextInput{
+							CustomID:  "q_text",
+							Label:     "Type your new question",
+							Style:     discordgo.TextInputParagraph,
+							Required:  true,
+							MaxLength: 300,
+						},
+					},
+				},
+			},
+		},
+	})
+}
+
+func (h *BotHanlder) handleQuestionSubmit(session *discordgo.Session, intr *discordgo.InteractionCreate,
+	standupID uint, qIndex int, isNew bool) {
+
+	var standup models.Standup
+	h.DB.First(&standup, standupID)
+
+	newText := strings.TrimSpace(intr.ModalSubmitData().Components[0].(*discordgo.ActionsRow).Components[0].(*discordgo.TextInput).Value)
+
+	if isNew {
+		standup.Questions = append(standup.Questions, newText)
+	} else {
+		if newText == "" {
+			standup.Questions = append(standup.Questions[:qIndex], standup.Questions[qIndex+1:]...)
+		} else {
+			standup.Questions[qIndex] = newText
+		}
+	}
+
+	h.DB.Save(&standup)
+	h.showQuestionDashboard(session, intr, standup.ID, true)
+}
+
+func (h *BotHanlder) handleFinishQuestionEdit(session *discordgo.Session,
+	intr *discordgo.InteractionCreate, standupID uint) {
+
+	var standup models.Standup
+	if err := h.DB.First(&standup, standupID).Error; err != nil {
+		respondWithError(session, intr.Interaction, "Standup not found.")
+		return
+	}
+
+	session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseUpdateMessage,
+		Data: &discordgo.InteractionResponseData{
+			Content: fmt.Sprintf("✅ **Done!** The questions for **%s** are locked in.\n*(Total questions: %d)*",
+				standup.Name, len(standup.Questions)),
+			Components: []discordgo.MessageComponent{},
 		},
 	})
 }
@@ -220,24 +368,12 @@ func (h *BotHanlder) handleDeleteStandup(session *discordgo.Session, intr *disco
 		Where("guild_id = ? and name = ?", intr.GuildID, standupName).
 		First(&standup)
 	if result.Error != nil {
-		session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
-			Type: discordgo.InteractionResponseChannelMessageWithSource,
-			Data: &discordgo.InteractionResponseData{
-				Content: fmt.Sprintf("❌ Standup named **%s** not found in this server.", standupName),
-				Flags:   discordgo.MessageFlagsEphemeral,
-			},
-		})
+		respondWithError(session, intr.Interaction, fmt.Sprintf("Standup named **%s** not found in this server.", standupName))
 		return
 	}
 
 	if standup.ManagerID != userID && !isServerAdmin(intr) {
-		session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
-			Type: discordgo.InteractionResponseChannelMessageWithSource,
-			Data: &discordgo.InteractionResponseData{
-				Content: "⛔ Only the manager who created this standup can delete it.",
-				Flags:   discordgo.MessageFlagsEphemeral,
-			},
-		})
+		respondWithError(session, intr.Interaction, "⛔ Only the manager who created this standup can delete it.")
 		return
 	}
 
@@ -246,21 +382,14 @@ func (h *BotHanlder) handleDeleteStandup(session *discordgo.Session, intr *disco
 	}
 
 	if err := h.DB.Unscoped().Delete(&standup).Error; err != nil {
-		session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
-			Type: discordgo.InteractionResponseChannelMessageWithSource,
-			Data: &discordgo.InteractionResponseData{
-				Content: "❌ Failed to delete the standup from the database.",
-				Flags:   discordgo.MessageFlagsEphemeral,
-			},
-		})
+		respondWithError(session, intr.Interaction, "Failed to delete the standup from the database.")
 		return
 	}
 
 	session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseChannelMessageWithSource,
 		Data: &discordgo.InteractionResponseData{
-			Content: fmt.Sprintf("🗑️ ✅ Standup **%s** and all its participant links have been permanently deleted.",
-				standup.Name),
+			Content: fmt.Sprintf("🗑️ ✅ Standup **%s** and all its participant links have been permanently deleted.", standup.Name),
 		},
 	})
 }
@@ -361,9 +490,7 @@ func (h *BotHanlder) handleRemoveMember(session *discordgo.Session, intr *discor
 	}
 
 	if standup.ManagerID != userID && !isServerAdmin(intr) {
-		respondWithError(session,
-			intr.Interaction,
-			"⛔ Only the manager who created this standup, or a Server Admin, can edit it.")
+		respondWithError(session, intr.Interaction, "⛔ Only the manager who created this standup, or a Server Admin, can edit it.")
 		return
 	}
 
@@ -384,9 +511,8 @@ func (h *BotHanlder) handleRemoveMember(session *discordgo.Session, intr *discor
 	session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseChannelMessageWithSource,
 		Data: &discordgo.InteractionResponseData{
-			Content: fmt.Sprintf("✅ <@%s> has been successfully removed from **%s**.",
-				targetUser.ID, standup.Name),
-			Flags: discordgo.MessageFlagsEphemeral,
+			Content: fmt.Sprintf("✅ <@%s> has been successfully removed from **%s**.", targetUser.ID, standup.Name),
+			Flags:   discordgo.MessageFlagsEphemeral,
 		},
 	})
 
