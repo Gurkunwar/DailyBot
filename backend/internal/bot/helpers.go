@@ -1,6 +1,11 @@
 package bot
 
-import "github.com/bwmarrin/discordgo"
+import (
+	"fmt"
+	"time"
+
+	"github.com/bwmarrin/discordgo"
+)
 
 func extractUserID(intr *discordgo.InteractionCreate) string {
 	if intr.Member != nil {
@@ -29,6 +34,28 @@ func isServerAdmin(intr *discordgo.InteractionCreate) bool {
 	if intr.Member == nil {
 		return false
 	}
-	
+
 	return intr.Member.Permissions&discordgo.PermissionAdministrator != 0
+}
+
+func formatLocalTime(utcTimeStr string, userTZ string) string {
+	if userTZ == "" {
+		return fmt.Sprintf("**%s UTC**\n> *Tip: Run `/timezone` to get reminders in your local time!*", utcTimeStr)
+	}
+
+	loc, err := time.LoadLocation(userTZ)
+	if err != nil {
+		return fmt.Sprintf("**%s UTC**\n> *Tip: Run `/timezone` to get reminders in your local time!*", utcTimeStr)
+	}
+
+	parsedTime, err := time.Parse("15:04", utcTimeStr)
+	if err != nil {
+		return fmt.Sprintf("**%s** (%s)", utcTimeStr, userTZ)
+	}
+
+	now := time.Now().UTC()
+	utcDate := time.Date(now.Year(), now.Month(), now.Day(), parsedTime.Hour(), parsedTime.Minute(), 0, 0, time.UTC)
+	localDate := utcDate.In(loc)
+
+	return fmt.Sprintf("**%s** (%s)", localDate.Format("15:04"), userTZ)
 }
