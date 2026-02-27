@@ -167,7 +167,9 @@ func (h *BotHanlder) handleHistory(session *discordgo.Session, intr *discordgo.I
 	})
 }
 
-func (h *BotHanlder) sendTimezoneMenu(session *discordgo.Session, channelID, userID string, standupID uint) {
+func (h *BotHanlder) sendTimezoneMenu(session *discordgo.Session, intr *discordgo.InteractionCreate, standupID uint) {
+	userID := extractUserID(intr)
+
 	state := models.StandupState{
 		UserID:    userID,
 		StandupID: standupID,
@@ -181,15 +183,19 @@ func (h *BotHanlder) sendTimezoneMenu(session *discordgo.Session, channelID, use
 		{Label: "Singapore (SGT)", Value: "Asia/Singapore", Description: "UTC+8:00"},
 	}
 
-	session.ChannelMessageSendComplex(channelID, &discordgo.MessageSend{
-		Content: "Welcome to **DailyBot**! I don't know your timezone yet. Please pick one:",
-		Components: []discordgo.MessageComponent{
-			discordgo.ActionsRow{
-				Components: []discordgo.MessageComponent{
-					discordgo.SelectMenu{
-						CustomID:    "select_tz",
-						Placeholder: "Select your local timezone",
-						Options:     options,
+	session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseChannelMessageWithSource,
+		Data: &discordgo.InteractionResponseData{
+			Content: "Welcome to **DailyBot**! I don't know your timezone yet. Please pick one:",
+			Flags:   discordgo.MessageFlagsEphemeral,
+			Components: []discordgo.MessageComponent{
+				discordgo.ActionsRow{
+					Components: []discordgo.MessageComponent{
+						discordgo.SelectMenu{
+							CustomID:    "select_tz",
+							Placeholder: "Select your local timezone",
+							Options:     options,
+						},
 					},
 				},
 			},

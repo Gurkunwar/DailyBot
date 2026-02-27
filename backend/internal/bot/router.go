@@ -43,7 +43,7 @@ func (h *BotHanlder) OnInteraction(session *discordgo.Session, intr *discordgo.I
 		case "history":
 			h.handleHistory(session, intr)
 		case "timezone":
-			h.sendTimezoneMenu(session, intr.ChannelID, userID, 0)
+			h.sendTimezoneMenu(session, intr, 0)
 		}
 	case discordgo.InteractionMessageComponent:
 		customID := intr.MessageComponentData().CustomID
