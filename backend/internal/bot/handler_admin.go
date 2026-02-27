@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"regexp"
 	"strings"
 
 	"github.com/Gurkunwar/dailybot/internal/models"
@@ -27,7 +28,7 @@ func (h *BotHanlder) handleCreateStandup(session *discordgo.Session, intr *disco
 		Answers: []string{name, channelID, membersRaw, standupTime},
 	}
 
-	store.SaveState(h.Redis, intr.Member.User.ID+"_create", tempState)
+	store.SaveState(h.Redis, intr.Member.User.ID + "_create", tempState)
 	h.openSingleQuestionModal(session, intr, 1)
 }
 
@@ -41,6 +42,10 @@ func (h *BotHanlder) finalizeCreateStandup(session *discordgo.Session, intr *dis
 		})
 		return
 	}
+
+	session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseDeferredMessageUpdate,
+	})
 
 	name := state.Answers[0]
 	channelID := state.Answers[1]
@@ -65,39 +70,41 @@ func (h *BotHanlder) finalizeCreateStandup(session *discordgo.Session, intr *dis
 		models.UserProfile{UserID: intr.Member.User.ID})
 
 	if err := h.StandupService.CreateStandup(standup); err != nil {
-		session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
-			Type: discordgo.InteractionResponseChannelMessageWithSource,
-			Data: &discordgo.InteractionResponseData{Content: "❌ Failed to create standup."},
+		session.FollowupMessageCreate(intr.Interaction, true, &discordgo.WebhookParams{
+			Content: "❌ Failed to create standup.",
 		})
 		return
 	}
 
-	members := strings.Fields(membersRaw)
+	h.DB.Where("guild_id = ? AND name = ?", intr.GuildID, name).First(&standup)
 	addedCount := 0
 
-	h.DB.Where("guild_id = ? AND name = ?", intr.GuildID, name).First(&standup)
+	re := regexp.MustCompile(`<@!?(\d+)>`)
+	matches := re.FindAllStringSubmatch(membersRaw, -1)
 
-	for _, member := range members {
-		if strings.HasPrefix(member, "<@") && strings.HasSuffix(member, ">") {
-			userID := strings.Trim(member, "<@!>")
+	for _, match := range matches {
+		if len(match) > 1 {
+			userID := match[1]
 
 			var user models.UserProfile
 			h.DB.FirstOrCreate(&user, models.UserProfile{UserID: userID})
 			h.DB.Model(&user).Association("Standups").Append(&standup)
 			addedCount++
 
-			dmChannel, err := session.UserChannelCreate(userID)
-			if err == nil {
-				timeDisplay := formatLocalTime(standup.Time, user.Timezone)
-				welcomeMsg := fmt.Sprintf(
-					"👋 **You've been added to the '%s' Standup!**\n\n"+
-						"⏰ This standup is scheduled for %s\n\n"+
-						"You can now submit your daily reports for this team.\n"+
-						"Run `/start` here or in the server to begin.",
-					name, timeDisplay,
-				)
-				session.ChannelMessageSend(dmChannel.ID, welcomeMsg)
-			}
+			go func(uID string, tz string) {
+				dmChannel, err := session.UserChannelCreate(uID)
+				if err == nil {
+					timeDisplay := formatLocalTime(standup.Time, tz)
+					welcomeMsg := fmt.Sprintf(
+						"👋 **You've been added to the '%s' Standup!**\n\n"+
+							"⏰ This standup is scheduled for %s\n\n"+
+							"You can now submit your daily reports for this team.\n"+
+							"Run `/start` here or in the server to begin.",
+						name, timeDisplay,
+					)
+					session.ChannelMessageSend(dmChannel.ID, welcomeMsg)
+				}
+			}(userID, user.Timezone)
 		}
 	}
 
@@ -105,13 +112,13 @@ func (h *BotHanlder) finalizeCreateStandup(session *discordgo.Session, intr *dis
 
 	timeDisplay := formatLocalTime(standup.Time, manager.Timezone)
 
-	session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
-		Type: discordgo.InteractionResponseUpdateMessage,
-		Data: &discordgo.InteractionResponseData{
-			Content: fmt.Sprintf("🎉 **Standup '%s' created successfully!**\n⏰ Scheduled for: %s\nAdded %d questions and %d members.",
-				standup.Name, timeDisplay, len(standup.Questions), addedCount),
-			Components: []discordgo.MessageComponent{},
-		},
+	contentStr := fmt.Sprintf("🎉 **Standup '%s' created successfully!**\n⏰ Scheduled for: %s\nAdded %d questions and %d members.",
+		standup.Name, timeDisplay, len(standup.Questions), addedCount)
+	components := []discordgo.MessageComponent{}
+
+	session.InteractionResponseEdit(intr.Interaction, &discordgo.WebhookEdit{
+		Content:    &contentStr,
+		Components: &components,
 	})
 }
 
