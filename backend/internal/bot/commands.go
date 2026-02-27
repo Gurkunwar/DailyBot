@@ -18,8 +18,8 @@ var Commands = []*discordgo.ApplicationCommand{
 		Description: "Show the DailyBot help menu",
 	},
 	{
-		Name:        "reset",
-		Description: "Clear your timezone and primary server settings",
+		Name:        "delete-my-data",
+		Description: "Permanently delete your profile, timezone, and leave all standups",
 	},
 	{
 		Name:        "timezone",
@@ -61,12 +61,6 @@ var Commands = []*discordgo.ApplicationCommand{
 				Description: "Where reports should be posted",
 				Required:    true,
 			},
-			// {
-			// 	Type:        discordgo.ApplicationCommandOptionString,
-			// 	Name:        "questions",
-			// 	Description: "Questions separated by a semicolon (;)",
-			// 	Required:    true,
-			// },
 			{
 				Type:        discordgo.ApplicationCommandOptionString,
 				Name:        "members",
@@ -221,10 +215,19 @@ func (h *BotHanlder) handleSetChannel(session *discordgo.Session, intr *discordg
 
 func (h *BotHanlder) handleHelp(session *discordgo.Session, intr *discordgo.InteractionCreate) {
 	helpText := "💡 **DailyBot Help Menu**\n\n" +
+		"**👤 User Commands**\n" +
 		"`/start` - Manually trigger your daily standup form.\n" +
-		"`/reset` - Clear your timezone and primary server settings.\n" +
-		"`/set-channel #channel` - (Admin only) Set where reports are posted.\n\n" +
-		"Note: I will automatically ping you at 9:00 AM in your saved timezone!"
+		"`/history` - View past standup reports.\n" +
+		"`/timezone` - Set your local timezone for standup reminders.\n" +
+		"`/delete-my-data` - Permanently delete your profile and leave all standups.\n\n" +
+		"**🛠️ Manager Commands (Admin Only)**\n" +
+		"`/create-standup` - Create a new team standup.\n" +
+		"`/edit-standup` - Edit an existing standup team's settings.\n" +
+		"`/delete-standup` - Permanently delete an existing standup team.\n" +
+		"`/set-channel` - Set or change where reports are posted.\n" +
+		"`/add-member` - Add a user to an existing standup.\n" +
+		"`/remove-member` - Remove a user from an existing standup.\n\n" +
+		"ℹ️ *Note: I will automatically ping you at your standup's scheduled time in your saved timezone!*"
 
 	session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseChannelMessageWithSource,
@@ -235,7 +238,7 @@ func (h *BotHanlder) handleHelp(session *discordgo.Session, intr *discordgo.Inte
 	})
 }
 
-func (h *BotHanlder) handleReset(session *discordgo.Session, intr *discordgo.InteractionCreate) {
+func (h *BotHanlder) handleDeleteMyData(session *discordgo.Session, intr *discordgo.InteractionCreate) {
 	var userID string
 	if intr.Member != nil {
 		userID = intr.Member.User.ID

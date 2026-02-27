@@ -83,8 +83,8 @@ func (h *BotHanlder) OnInteraction(session *discordgo.Session, intr *discordgo.I
 			h.InitiateStandup(session, userID, intr.GuildID, intr.ChannelID, 0)
 		case "help":
 			h.handleHelp(session, intr)
-		case "reset":
-			h.handleReset(session, intr)
+		case "delete-my-data":
+			h.handleDeleteMyData(session, intr)
 		case "set-channel":
 			h.handleSetChannel(session, intr)
 		case "create-standup":

@@ -535,9 +535,11 @@ func (h *BotHanlder) handleAddMember(session *discordgo.Session, intr *discordgo
 	dmChannel, err := session.UserChannelCreate(targetUser.ID)
 	if err == nil {
 		session.ChannelMessageSend(dmChannel.ID, fmt.Sprintf(
-			`👋 You've been added to the **%s** standup by your manager.
-			\nRun "/start" in the server to submit your daily report.`,
-			standup.Name))
+					"👋 **You've been added to the '%s' Standup!**\n\n"+
+						"You can now submit your daily reports for this team.\n"+
+						"Run `/start` here or in the server to begin.",
+					standup.Name,
+				))
 	}
 }
 
