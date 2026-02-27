@@ -269,6 +269,12 @@ func (h *BotHanlder) finalizeCreateStandup(session *discordgo.Session, intr *dis
 		Questions:       questions,
 	}
 
+	var guild models.Guild
+	h.DB.Where("id = ?", intr.GuildID).FirstOrCreate(&guild, models.Guild{GuildID: intr.GuildID})
+
+	var manager models.UserProfile
+	h.DB.Where("user_id = ?", intr.Member.User.ID).FirstOrCreate(&manager, models.UserProfile{UserID: intr.Member.User.ID})
+
 	if err := h.StandupService.CreateStandup(standup); err != nil {
 		session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
 			Type: discordgo.InteractionResponseChannelMessageWithSource,
