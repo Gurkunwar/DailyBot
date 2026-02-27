@@ -104,7 +104,13 @@ func (h *BotHanlder) handleAutocomplete(session *discordgo.Session, intr *discor
 		userID := extractUserID(intr)
 
 		var standups []models.Standup
-		h.DB.Where("guild_id = ? AND manager_id = ?", intr.GuildID, userID).Find(&standups)
+		// h.DB.Where("guild_id = ? AND manager_id = ?", intr.GuildID, userID).Find(&standups)
+
+		if isServerAdmin(intr) {
+			h.DB.Where("guild_id = ?", intr.GuildID).Find(&standups)
+		} else {
+			h.DB.Where("guild_id = ? AND manager_id = ?", intr.GuildID, userID).Find(&standups)
+		}
 
 		for _, st := range standups {
 			if strings.Contains(strings.ToLower(st.Name), typedValue) {

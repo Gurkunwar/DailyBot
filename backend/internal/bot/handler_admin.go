@@ -36,8 +36,8 @@ func (h *BotHanlder) finalizeCreateStandup(session *discordgo.Session, intr *dis
 	if err != nil || len(state.Answers) < 5 {
 		session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
 			Type: discordgo.InteractionResponseChannelMessageWithSource,
-			Data: &discordgo.InteractionResponseData{Content: "❌ Session expired or no questions added.", 
-			Flags: discordgo.MessageFlagsEphemeral},
+			Data: &discordgo.InteractionResponseData{Content: "❌ Session expired or no questions added.",
+				Flags: discordgo.MessageFlagsEphemeral},
 		})
 		return
 	}
@@ -281,7 +281,7 @@ func (h *BotHanlder) handleSetChannel(session *discordgo.Session, intr *discordg
 		Type: discordgo.InteractionResponseChannelMessageWithSource,
 		Data: &discordgo.InteractionResponseData{
 			Content: fmt.Sprintf("✅ Reports for **%s** will now be sent to <#%s>", standup.Name, targetChannelID),
-			Flags: discordgo.MessageFlagsEphemeral,
+			Flags:   discordgo.MessageFlagsEphemeral,
 		},
 	})
 }
@@ -290,6 +290,7 @@ func (h *BotHanlder) handleAddMember(session *discordgo.Session, intr *discordgo
 	options := intr.ApplicationCommandData().Options
 	targetUser := options[0].UserValue(session)
 	targetStandupName := options[1].StringValue()
+	userID := extractUserID(intr)
 
 	var standup models.Standup
 	result := h.DB.Where("guild_id = ? and name = ?", intr.GuildID, targetStandupName).First(&standup)
@@ -304,14 +305,9 @@ func (h *BotHanlder) handleAddMember(session *discordgo.Session, intr *discordgo
 		return
 	}
 
-	if standup.ManagerID != intr.Member.User.ID {
-		session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
-			Type: discordgo.InteractionResponseChannelMessageWithSource,
-			Data: &discordgo.InteractionResponseData{
-				Content: "⛔ You are not the manager of this standup.",
-				Flags:   discordgo.MessageFlagsEphemeral,
-			},
-		})
+	if standup.ManagerID != userID && !isServerAdmin(intr) {
+		respondWithError(session,
+			intr.Interaction, "⛔ Only the manager who created this standup, or a Server Admin, can edit it.")
 		return
 	}
 
@@ -336,11 +332,11 @@ func (h *BotHanlder) handleAddMember(session *discordgo.Session, intr *discordgo
 	dmChannel, err := session.UserChannelCreate(targetUser.ID)
 	if err == nil {
 		session.ChannelMessageSend(dmChannel.ID, fmt.Sprintf(
-					"👋 **You've been added to the '%s' Standup!**\n\n"+
-						"You can now submit your daily reports for this team.\n"+
-						"Run `/start` here or in the server to begin.",
-					standup.Name,
-				))
+			"👋 **You've been added to the '%s' Standup!**\n\n"+
+				"You can now submit your daily reports for this team.\n"+
+				"Run `/start` here or in the server to begin.",
+			standup.Name,
+		))
 	}
 }
 

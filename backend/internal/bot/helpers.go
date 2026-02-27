@@ -24,3 +24,11 @@ func respondWithError(session *discordgo.Session, interaction *discordgo.Interac
 		},
 	})
 }
+
+func isServerAdmin(intr *discordgo.InteractionCreate) bool {
+	if intr.Member == nil {
+		return false
+	}
+	
+	return intr.Member.Permissions&discordgo.PermissionAdministrator != 0
+}

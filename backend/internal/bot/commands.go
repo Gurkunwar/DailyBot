@@ -4,6 +4,8 @@ import (
 	"github.com/bwmarrin/discordgo"
 )
 
+var adminPerms int64 = discordgo.PermissionAdministrator
+
 var Commands = []*discordgo.ApplicationCommand{
 	{
 		Name:        "start",
@@ -22,9 +24,9 @@ var Commands = []*discordgo.ApplicationCommand{
 		Description: "Set your local timezone for standup reminders",
 	},
 	{
-		Name:        "set-channel",
-		Description: "Set where reports are posted (Admin only)",
-		// DefaultMemberPermissions: func() *int64 { i := int64(discordgo.PermissionAdministrator); return &i }(),
+		Name:                     "set-channel",
+		Description:              "Set where reports are posted (Admin only)",
+		DefaultMemberPermissions: &adminPerms,
 		Options: []*discordgo.ApplicationCommandOption{
 			{
 				Type:        discordgo.ApplicationCommandOptionChannel,
@@ -42,8 +44,9 @@ var Commands = []*discordgo.ApplicationCommand{
 		},
 	},
 	{
-		Name:        "create-standup",
-		Description: "Create a new team standup (Admin only)",
+		Name:                     "create-standup",
+		Description:              "Create a new team standup (Admin only)",
+		DefaultMemberPermissions: &adminPerms,
 		Options: []*discordgo.ApplicationCommandOption{
 			{
 				Type:        discordgo.ApplicationCommandOptionString,
@@ -72,8 +75,9 @@ var Commands = []*discordgo.ApplicationCommand{
 		},
 	},
 	{
-		Name:        "edit-standup",
-		Description: "Edit an existing standup team (Admin only)",
+		Name:                     "edit-standup",
+		Description:              "Edit an existing standup team (Admin only)",
+		DefaultMemberPermissions: &adminPerms,
 		Options: []*discordgo.ApplicationCommandOption{
 			{
 				Type:         discordgo.ApplicationCommandOptionString,
@@ -103,8 +107,9 @@ var Commands = []*discordgo.ApplicationCommand{
 		},
 	},
 	{
-		Name:        "delete-standup",
-		Description: "Permanently delete an existing standup team (Admin only)",
+		Name:                     "delete-standup",
+		Description:              "Permanently delete an existing standup team (Admin only)",
+		DefaultMemberPermissions: &adminPerms,
 		Options: []*discordgo.ApplicationCommandOption{
 			{
 				Type:         discordgo.ApplicationCommandOptionString,
@@ -116,8 +121,9 @@ var Commands = []*discordgo.ApplicationCommand{
 		},
 	},
 	{
-		Name:        "add-member",
-		Description: "Add a user to an existing standup (Admin Only)",
+		Name:                     "add-member",
+		Description:              "Add a user to an existing standup (Admin Only)",
+		DefaultMemberPermissions: &adminPerms,
 		Options: []*discordgo.ApplicationCommandOption{
 			{
 				Type:        discordgo.ApplicationCommandOptionUser,
@@ -135,8 +141,9 @@ var Commands = []*discordgo.ApplicationCommand{
 		},
 	},
 	{
-		Name:        "remove-member",
-		Description: "Remove a user from an existing standup (Admin Only)",
+		Name:                     "remove-member",
+		Description:              "Remove a user from an existing standup (Admin Only)",
+		DefaultMemberPermissions: &adminPerms,
 		Options: []*discordgo.ApplicationCommandOption{
 			{
 				Type:        discordgo.ApplicationCommandOptionUser,
