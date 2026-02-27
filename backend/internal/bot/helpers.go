@@ -1,0 +1,26 @@
+package bot
+
+import "github.com/bwmarrin/discordgo"
+
+func extractUserID(intr *discordgo.InteractionCreate) string {
+	if intr.Member != nil {
+		return intr.Member.User.ID
+	}
+	if intr.User != nil {
+		return intr.User.ID
+	}
+	if intr.Message != nil && intr.Message.Author != nil {
+		return intr.Message.Author.ID
+	}
+	return ""
+}
+
+func respondWithError(session *discordgo.Session, interaction *discordgo.Interaction, message string) {
+	session.InteractionRespond(interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseChannelMessageWithSource,
+		Data: &discordgo.InteractionResponseData{
+			Content: "❌ " + message,
+			Flags:   discordgo.MessageFlagsEphemeral,
+		},
+	})
+}

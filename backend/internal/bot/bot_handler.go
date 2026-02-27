@@ -1,6 +1,9 @@
 package bot
 
 import (
+	"log"
+	"os"
+
 	"github.com/Gurkunwar/dailybot/internal/services"
 	"github.com/bwmarrin/discordgo"
 	"github.com/redis/go-redis/v9"
@@ -28,4 +31,25 @@ func NewBotHandler(session *discordgo.Session,
 		StandupService: standupService,
 		UserService: userService,
 	}
+}
+
+func NewSession() (*discordgo.Session, error) {
+	dg, err := discordgo.New("Bot " + os.Getenv("DISCORD_BOT_TOKEN"))
+
+	if err != nil {
+		return nil, err
+	}
+
+	dg.Identify.Intents = discordgo.IntentsGuilds | discordgo.IntentsGuildMessages | discordgo.IntentDirectMessages
+    return dg, nil
+}
+
+func RegisterCommands(dg *discordgo.Session) {
+	log.Println("Registering bot commands...")
+    for _, command := range Commands {
+        _, err := dg.ApplicationCommandCreate(dg.State.User.ID, "", command)
+        if err != nil {
+            log.Printf("Cannot create '%v' command: %v", command.Name, err)
+        }
+    }
 }

@@ -17,9 +17,20 @@ import (
 func main() {
 	godotenv.Load()
 
-	db, _ := database.InitDB()
-	rdb, _ := store.InitRedis()
-	dg, _ := bot.NewSession()
+	db, err := database.InitDB()
+	if err != nil {
+		log.Fatalf("❌ Failed to connect to Database: %v", err)
+	}
+
+	rdb, err := store.InitRedis()
+	if err != nil {
+		log.Fatalf("❌ Failed to connect to Redis: %v", err)
+	}
+
+	dg, err := bot.NewSession()
+	if err != nil {
+		log.Fatalf("❌ Failed to create Discord session: %v", err)
+	}
 
 	standupSvc := &services.StandupService{
 		DB:      db,

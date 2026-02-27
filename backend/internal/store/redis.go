@@ -13,7 +13,7 @@ import (
 func InitRedis() (*redis.Client, error) {
 	addr := os.Getenv("REDIS_URL")
 	if addr == "" {
-		addr = "localhost:6379"
+		addr = "redis://localhost:6379/0"
 	}
 
 	opts, err := redis.ParseURL(addr)

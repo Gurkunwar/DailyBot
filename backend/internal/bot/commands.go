@@ -1,10 +1,6 @@
 package bot
 
 import (
-	"fmt"
-	"log"
-
-	"github.com/Gurkunwar/dailybot/internal/models"
 	"github.com/bwmarrin/discordgo"
 )
 
@@ -182,96 +178,4 @@ var Commands = []*discordgo.ApplicationCommand{
 			},
 		},
 	},
-}
-
-func (h *BotHanlder) handleSetChannel(session *discordgo.Session, intr *discordgo.InteractionCreate) {
-	options := intr.ApplicationCommandData().Options
-	targetChannelID := options[0].Value.(string)
-	standupName := options[1].Value.(string)
-
-	var standup models.Standup
-	result := h.DB.Where("guild_id = ? AND name = ?", intr.GuildID, standupName).First(&standup)
-
-	if result.Error != nil {
-		session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
-			Type: discordgo.InteractionResponseChannelMessageWithSource,
-			Data: &discordgo.InteractionResponseData{
-				Content: "❌ Standup not found. Create it first with `/create-standup`.",
-			},
-		})
-		return
-	}
-
-	standup.ReportChannelID = targetChannelID
-	h.DB.Save(&standup)
-
-	session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
-		Type: discordgo.InteractionResponseChannelMessageWithSource,
-		Data: &discordgo.InteractionResponseData{
-			Content: fmt.Sprintf("✅ Reports for **%s** will now be sent to <#%s>", standup.Name, targetChannelID),
-		},
-	})
-}
-
-func (h *BotHanlder) handleHelp(session *discordgo.Session, intr *discordgo.InteractionCreate) {
-	helpText := "💡 **DailyBot Help Menu**\n\n" +
-		"**👤 User Commands**\n" +
-		"`/start` - Manually trigger your daily standup form.\n" +
-		"`/history` - View past standup reports.\n" +
-		"`/timezone` - Set your local timezone for standup reminders.\n" +
-		"`/delete-my-data` - Permanently delete your profile and leave all standups.\n\n" +
-		"**🛠️ Manager Commands (Admin Only)**\n" +
-		"`/create-standup` - Create a new team standup.\n" +
-		"`/edit-standup` - Edit an existing standup team's settings.\n" +
-		"`/delete-standup` - Permanently delete an existing standup team.\n" +
-		"`/set-channel` - Set or change where reports are posted.\n" +
-		"`/add-member` - Add a user to an existing standup.\n" +
-		"`/remove-member` - Remove a user from an existing standup.\n\n" +
-		"ℹ️ *Note: I will automatically ping you at your standup's scheduled time in your saved timezone!*"
-
-	session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
-		Type: discordgo.InteractionResponseChannelMessageWithSource,
-		Data: &discordgo.InteractionResponseData{
-			Content: helpText,
-			Flags:   discordgo.MessageFlagsEphemeral,
-		},
-	})
-}
-
-func (h *BotHanlder) handleDeleteMyData(session *discordgo.Session, intr *discordgo.InteractionCreate) {
-	var userID string
-	if intr.Member != nil {
-		userID = intr.Member.User.ID
-	} else {
-		userID = intr.User.ID
-	}
-
-	var user models.UserProfile
-	if err := h.DB.Unscoped().Where("user_id = ?", userID).First(&user).Error; err != nil {
-		session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
-			Type: discordgo.InteractionResponseChannelMessageWithSource,
-			Data: &discordgo.InteractionResponseData{
-				Content: "❌ No profile found to reset.",
-				Flags:   discordgo.MessageFlagsEphemeral,
-			},
-		})
-		return
-	}
-
-	if err := h.DB.Model(&user).Association("Standups").Clear(); err != nil {
-		log.Println("Error clearing standup teams:", err)
-	}
-
-	if result := h.DB.Unscoped().Delete(&user); result.Error != nil {
-		session.ChannelMessageSend(intr.ChannelID, "❌ Failed to reset profile.")
-		return
-	}
-
-	session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
-		Type: discordgo.InteractionResponseChannelMessageWithSource,
-		Data: &discordgo.InteractionResponseData{
-			Content: "✅ **Profile Reset Complete.** You have been removed from all standup teams.",
-			Flags:   discordgo.MessageFlagsEphemeral,
-		},
-	})
 }
