@@ -121,6 +121,20 @@ var Commands = []*discordgo.ApplicationCommand{
 		},
 	},
 	{
+		Name:        "standup-info",
+		Description: "View all settings, members, and questions for a standup",
+		DefaultMemberPermissions: &adminPerms,
+		Options: []*discordgo.ApplicationCommandOption{
+			{
+				Type:         discordgo.ApplicationCommandOptionString,
+				Name:         "standup_name",
+				Description:  "The exact name of the standup to view",
+				Required:     true,
+				Autocomplete: true,
+			},
+		},
+	},
+	{
 		Name:                     "add-member",
 		Description:              "Add a user to an existing standup (Admin Only)",
 		DefaultMemberPermissions: &adminPerms,

@@ -44,6 +44,8 @@ func (h *BotHanlder) OnInteraction(session *discordgo.Session, intr *discordgo.I
 			h.handleHistory(session, intr)
 		case "timezone":
 			h.sendTimezoneMenu(session, intr, 0)
+		case "standup-info":
+			h.handleStandupInfo(session, intr)
 		}
 
 	case discordgo.InteractionMessageComponent:
@@ -150,6 +152,7 @@ func (h *BotHanlder) handleAutocomplete(session *discordgo.Session, intr *discor
 		data.Name == "remove-member" ||
 		data.Name == "set-channel" ||
 		data.Name == "edit-standup" ||
+		data.Name == "standup-info" ||
 		data.Name == "history" {
 
 		userID := extractUserID(intr)

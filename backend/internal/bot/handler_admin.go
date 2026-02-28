@@ -637,3 +637,64 @@ func (h *BotHanlder) handleRemoveMember(session *discordgo.Session, intr *discor
 			standup.Name))
 	}
 }
+
+func (h *BotHanlder) handleStandupInfo(session *discordgo.Session, intr *discordgo.InteractionCreate) {
+	standupName := intr.ApplicationCommandData().Options[0].StringValue()
+
+	var standup models.Standup
+	if err := h.DB.Preload("Participants").Where("guild_id = ? AND name = ?",
+		intr.GuildID, standupName).First(&standup).Error; err != nil {
+
+		respondWithError(session, intr.Interaction, fmt.Sprintf("❌ Standup named **%s** not found.", standupName))
+		return
+	}
+
+	activeDays := standup.Days
+	if activeDays == "" {
+		activeDays = "Monday, Tuesday, Wednesday, Thursday, Friday"
+	} else {
+		activeDays = strings.ReplaceAll(activeDays, ",", ", ")
+	}
+
+	var qList strings.Builder
+	for i, q := range standup.Questions {
+		qList.WriteString(fmt.Sprintf("**%d.** %s\n", i+1, q))
+	}
+	if len(standup.Questions) == 0 {
+		qList.WriteString("*No questions configured.*")
+	}
+
+	var memberMentions []string
+	for _, p := range standup.Participants {
+		memberMentions = append(memberMentions, fmt.Sprintf("<@%s>", p.UserID))
+	}
+	memberStr := strings.Join(memberMentions, " ")
+
+	if len(memberStr) > 1000 {
+		memberStr = fmt.Sprintf("*%d members (List too long to display)*", len(standup.Participants))
+	} else if len(memberMentions) == 0 {
+		memberStr = "*No members added yet.*"
+	}
+
+	embed := &discordgo.MessageEmbed{
+		Title:       fmt.Sprintf("📊 Standup Info: %s", standup.Name),
+		Color:       0x5865F2,
+		Description: "Here is the current configuration for this team.",
+		Fields: []*discordgo.MessageEmbedField{
+			{Name: "👑 Manager", Value: fmt.Sprintf("<@%s>", standup.ManagerID), Inline: true},
+			{Name: "📢 Report Channel", Value: fmt.Sprintf("<#%s>", standup.ReportChannelID), Inline: true},
+			{Name: "⏰ Trigger Time", Value: fmt.Sprintf("**%s** (Local to each user)", standup.Time), Inline: true},
+			{Name: "📅 Active Days", Value: activeDays, Inline: false},
+			{Name: fmt.Sprintf("👥 Members (%d)", len(standup.Participants)), Value: memberStr, Inline: false},
+			{Name: "📝 Questions", Value: qList.String(), Inline: false},
+		},
+	}
+
+	session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseChannelMessageWithSource,
+		Data: &discordgo.InteractionResponseData{
+			Embeds: []*discordgo.MessageEmbed{embed},
+			Flags:  discordgo.MessageFlagsEphemeral,
+		},
+	})
+}

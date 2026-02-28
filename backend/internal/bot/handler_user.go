@@ -14,17 +14,19 @@ func (h *BotHanlder) handleHelp(session *discordgo.Session, intr *discordgo.Inte
 	helpText := "💡 **DailyBot Help Menu**\n\n" +
 		"**👤 User Commands**\n" +
 		"`/start` - Manually trigger your daily standup form.\n" +
-		"`/history` - View past standup reports.\n" +
-		"`/timezone` - Set your local timezone for standup reminders.\n" +
-		"`/delete-my-data` - Permanently delete your profile and leave all standups.\n\n" +
+		"`/history` - View your past standup reports.\n" +
+		"`/timezone` - Set your local timezone so reminders trigger at your morning.\n" +
+		"`/delete-my-data` - Permanently delete your profile and leave all standups.\n" +
+		"> *💡 Tip: When you receive your automated DM, you can use the **Skip Today** button if you are out of office!*\n\n" +
 		"**🛠️ Manager Commands (Admin Only)**\n" +
 		"`/create-standup` - Create a new team standup.\n" +
-		"`/edit-standup` - Edit an existing standup team's settings.\n" +
-		"`/delete-standup` - Permanently delete an existing standup team.\n" +
-		"`/set-channel` - Set or change where reports are posted.\n" +
+		"`/standup-info` - 📊 View all settings, members, and questions for a standup.\n" +
+		"`/edit-standup` - **[Dashboard]** Edit Questions, Active Days, Trigger Time, and Report Channel.\n" +
 		"`/add-member` - Add a user to an existing standup.\n" +
-		"`/remove-member` - Remove a user from an existing standup.\n\n" +
-		"ℹ️ *Note: I will automatically ping you at your standup's scheduled time in your saved timezone!*"
+		"`/remove-member` - Remove a user from an existing standup.\n" +
+		"`/set-channel` - Quickly change where a standup's reports are posted.\n" +
+		"`/delete-standup` - Permanently delete an existing standup team.\n\n" +
+		"ℹ️ *Note: I will automatically ping your team members at their local time on your selected active days!*"
 
 	session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseChannelMessageWithSource,
