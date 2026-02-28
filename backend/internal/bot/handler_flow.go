@@ -366,7 +366,11 @@ func (h *BotHanlder) finalizeStandup(s *discordgo.Session, state *models.Standup
 		Timestamp: time.Now().Format(time.RFC3339),
 	}
 
-	s.ChannelMessageSendEmbed(standup.ReportChannelID, embed)
+	// s.ChannelMessageSendEmbed(standup.ReportChannelID, embed)
+	s.ChannelMessageSendComplex(standup.ReportChannelID, &discordgo.MessageSend{
+		Content: fmt.Sprintf("🔔 Update from <@%s>", state.UserID),
+		Embeds:  []*discordgo.MessageEmbed{embed},
+	})
 }
 
 func (h *BotHanlder) sendStandupSelectionMenu(s *discordgo.Session,
