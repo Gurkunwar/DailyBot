@@ -119,7 +119,9 @@ func (h *BotHanlder) startQuestionFlow(session *discordgo.Session, channelID, us
 	})
 }
 
-func (h *BotHanlder) openSingleQuestionModal(session *discordgo.Session, intr *discordgo.InteractionCreate, qNum int) {
+func (h *BotHanlder) openSingleQuestionModal(session *discordgo.Session,
+	intr *discordgo.InteractionCreate, qNum int) {
+
 	err := session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseModal,
 		Data: &discordgo.InteractionResponseData{
@@ -153,7 +155,9 @@ func (h *BotHanlder) handleCreateQuestionSubmit(session *discordgo.Session,
 	var currentQNum int
 	fmt.Sscanf(customID, "create_q_modal_%d", &currentQNum)
 
-	newQuestion := intr.ModalSubmitData().Components[0].(*discordgo.ActionsRow).Components[0].(*discordgo.TextInput).Value
+	newQuestion := intr.ModalSubmitData().
+		Components[0].(*discordgo.ActionsRow).
+		Components[0].(*discordgo.TextInput).Value
 
 	state, err := store.GetState(h.Redis, intr.Member.User.ID+"_create")
 	if err != nil {
@@ -319,7 +323,7 @@ func (h *BotHanlder) handleSingleAnswerSubmit(session *discordgo.Session,
 	})
 
 	h.finalizeStandup(session, state)
-	h.Redis.Del(context.Background(), "state:" + redisKey)
+	h.Redis.Del(context.Background(), "state:"+redisKey)
 }
 
 func (h *BotHanlder) handleSkipStandup(session *discordgo.Session,
@@ -335,11 +339,7 @@ func (h *BotHanlder) handleSkipStandup(session *discordgo.Session,
 	var userProfile models.UserProfile
 	h.DB.Where("user_id = ?", userID).First(&userProfile)
 
-	loc, err := time.LoadLocation(userProfile.Timezone)
-	if err != nil {
-		loc = time.UTC
-	}
-	localToday := time.Now().In(loc).Format("2006-01-02")
+	localToday := getUserLocalTime(userProfile.Timezone).Format("2006-01-02")
 
 	history := models.StandupHistory{
 		UserID:    userID,
@@ -357,17 +357,11 @@ func (h *BotHanlder) handleSkipStandup(session *discordgo.Session,
 	}
 
 	session.ChannelMessageSendComplex(standup.ReportChannelID, &discordgo.MessageSend{
-		// Content: fmt.Sprintf("🔔 Update from <@%s>", userID),
-		Embeds:  []*discordgo.MessageEmbed{embed},
+		Embeds: []*discordgo.MessageEmbed{embed},
 	})
 
-	session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
-		Type: discordgo.InteractionResponseUpdateMessage,
-		Data: &discordgo.InteractionResponseData{
-			Content:    "✅ You have successfully skipped today's standup. Your team has been notified!",
-			Components: []discordgo.MessageComponent{},
-		},
-	})
+	updateMessage(session, intr,
+		"✅ You have successfully skipped today's standup. Your team has been notified!", nil)
 }
 
 func (h *BotHanlder) finalizeStandup(s *discordgo.Session, state *models.StandupState) {
@@ -382,11 +376,7 @@ func (h *BotHanlder) finalizeStandup(s *discordgo.Session, state *models.Standup
 	var userProfile models.UserProfile
 	h.DB.Where("user_id = ?", state.UserID).First(&userProfile)
 
-	loc, err := time.LoadLocation(userProfile.Timezone)
-	if err != nil {
-		loc = time.UTC
-	}
-	localToday := time.Now().In(loc).Format("2006-01-02")
+	localToday := getUserLocalTime(userProfile.Timezone).Format("2006-01-02")
 
 	history := models.StandupHistory{
 		UserID:    state.UserID,
@@ -425,7 +415,7 @@ func (h *BotHanlder) finalizeStandup(s *discordgo.Session, state *models.Standup
 
 	s.ChannelMessageSendComplex(standup.ReportChannelID, &discordgo.MessageSend{
 		// Content: fmt.Sprintf("🔔 Update from <@%s>", state.UserID),
-		Embeds:  []*discordgo.MessageEmbed{embed},
+		Embeds: []*discordgo.MessageEmbed{embed},
 	})
 }
 
@@ -475,12 +465,7 @@ func (h *BotHanlder) sendStandupSelectionMenu(s *discordgo.Session,
 }
 
 func (h *BotHanlder) handleStandupSelection(session *discordgo.Session, intr *discordgo.InteractionCreate) {
-	var userID string
-	if intr.Member != nil {
-		userID = intr.Member.User.ID
-	} else {
-		userID = intr.User.ID
-	}
+	userID := extractUserID(intr)
 
 	if len(intr.MessageComponentData().Values) == 0 {
 		return
@@ -498,13 +483,7 @@ func (h *BotHanlder) handleStandupSelection(session *discordgo.Session, intr *di
 
 	h.DB.Model(&user).Association("Standups").Append(&standup)
 
-	session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
-		Type: discordgo.InteractionResponseUpdateMessage,
-		Data: &discordgo.InteractionResponseData{
-			Content:    fmt.Sprintf("✅ You joined **%s**!", standup.Name),
-			Components: []discordgo.MessageComponent{},
-		},
-	})
+	updateMessage(session, intr, fmt.Sprintf("✅ You joined **%s**!", standup.Name), nil)
 
 	h.InitiateStandup(session, userID, standup.GuildID, intr.ChannelID, standup.ID)
 }

@@ -24,26 +24,6 @@ var Commands = []*discordgo.ApplicationCommand{
 		Description: "Set your local timezone for standup reminders",
 	},
 	{
-		Name:                     "set-channel",
-		Description:              "Set where reports are posted (Admin only)",
-		DefaultMemberPermissions: &adminPerms,
-		Options: []*discordgo.ApplicationCommandOption{
-			{
-				Type:        discordgo.ApplicationCommandOptionChannel,
-				Name:        "channel",
-				Description: "The channel to send reports to",
-				Required:    true,
-			},
-			{
-				Type:         discordgo.ApplicationCommandOptionString,
-				Name:         "standup_name",
-				Description:  "The standup to update",
-				Required:     true,
-				Autocomplete: true,
-			},
-		},
-	},
-	{
 		Name:                     "create-standup",
 		Description:              "Create a new team standup (Admin only)",
 		DefaultMemberPermissions: &adminPerms,

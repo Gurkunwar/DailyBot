@@ -463,14 +463,9 @@ func (h *BotHanlder) handleFinishQuestionEdit(session *discordgo.Session,
 		return
 	}
 
-	session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
-		Type: discordgo.InteractionResponseUpdateMessage,
-		Data: &discordgo.InteractionResponseData{
-			Content: fmt.Sprintf("✅ **Done!** The settings and questions for **%s** are fully saved and locked in.",
-				standup.Name),
-			Components: []discordgo.MessageComponent{},
-		},
-	})
+	updateMessage(session, intr,
+		fmt.Sprintf("✅ **Done!** The settings and questions for **%s** are fully saved and locked in.",
+			standup.Name), nil)
 }
 
 func (h *BotHanlder) handleDeleteStandup(session *discordgo.Session, intr *discordgo.InteractionCreate) {
@@ -500,37 +495,9 @@ func (h *BotHanlder) handleDeleteStandup(session *discordgo.Session, intr *disco
 		return
 	}
 
-	session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
-		Type: discordgo.InteractionResponseChannelMessageWithSource,
-		Data: &discordgo.InteractionResponseData{
-			Content: fmt.Sprintf("🗑️ ✅ Standup **%s** and all its participant links have been permanently deleted.", standup.Name),
-		},
-	})
-}
-
-func (h *BotHanlder) handleSetChannel(session *discordgo.Session, intr *discordgo.InteractionCreate) {
-	options := intr.ApplicationCommandData().Options
-	targetChannelID := options[0].Value.(string)
-	standupName := options[1].Value.(string)
-
-	var standup models.Standup
-	result := h.DB.Where("guild_id = ? AND name = ?", intr.GuildID, standupName).First(&standup)
-
-	if result.Error != nil {
-		respondWithError(session, intr.Interaction, "Standup not found. Create it first with `/create-standup`.")
-		return
-	}
-
-	standup.ReportChannelID = targetChannelID
-	h.DB.Save(&standup)
-
-	session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
-		Type: discordgo.InteractionResponseChannelMessageWithSource,
-		Data: &discordgo.InteractionResponseData{
-			Content: fmt.Sprintf("✅ Reports for **%s** will now be sent to <#%s>", standup.Name, targetChannelID),
-			Flags:   discordgo.MessageFlagsEphemeral,
-		},
-	})
+	respondWithMessage(session, intr,
+		fmt.Sprintf("🗑️ ✅ Standup **%s** and all its participant links have been permanently deleted.", standup.Name),
+		true)
 }
 
 func (h *BotHanlder) handleAddMember(session *discordgo.Session, intr *discordgo.InteractionCreate) {
@@ -568,12 +535,7 @@ func (h *BotHanlder) handleAddMember(session *discordgo.Session, intr *discordgo
 		return
 	}
 
-	session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
-		Type: discordgo.InteractionResponseChannelMessageWithSource,
-		Data: &discordgo.InteractionResponseData{
-			Content: fmt.Sprintf("✅ <@%s> has been added to **%s**!", targetUser.ID, standup.Name),
-		},
-	})
+	respondWithMessage(session, intr, fmt.Sprintf("✅ <@%s> has been added to **%s**!", targetUser.ID, standup.Name), true)
 
 	dmChannel, err := session.UserChannelCreate(targetUser.ID)
 	if err == nil {
@@ -622,13 +584,7 @@ func (h *BotHanlder) handleRemoveMember(session *discordgo.Session, intr *discor
 		return
 	}
 
-	session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
-		Type: discordgo.InteractionResponseChannelMessageWithSource,
-		Data: &discordgo.InteractionResponseData{
-			Content: fmt.Sprintf("✅ <@%s> has been successfully removed from **%s**.", targetUser.ID, standup.Name),
-			Flags:   discordgo.MessageFlagsEphemeral,
-		},
-	})
+	respondWithMessage(session, intr, fmt.Sprintf("✅ <@%s> has been successfully removed from **%s**.", targetUser.ID, standup.Name), true)
 
 	dmChannel, err := session.UserChannelCreate(targetUser.ID)
 	if err == nil {

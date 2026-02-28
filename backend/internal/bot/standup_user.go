@@ -24,17 +24,10 @@ func (h *BotHanlder) handleHelp(session *discordgo.Session, intr *discordgo.Inte
 		"`/edit-standup` - **[Dashboard]** Edit Questions, Active Days, Trigger Time, and Report Channel.\n" +
 		"`/add-member` - Add a user to an existing standup.\n" +
 		"`/remove-member` - Remove a user from an existing standup.\n" +
-		"`/set-channel` - Quickly change where a standup's reports are posted.\n" +
 		"`/delete-standup` - Permanently delete an existing standup team.\n\n" +
 		"ℹ️ *Note: I will automatically ping your team members at their local time on your selected active days!*"
 
-	session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
-		Type: discordgo.InteractionResponseChannelMessageWithSource,
-		Data: &discordgo.InteractionResponseData{
-			Content: helpText,
-			Flags:   discordgo.MessageFlagsEphemeral,
-		},
-	})
+	respondWithMessage(session, intr, helpText, true)
 }
 
 func (h *BotHanlder) handleDeleteMyData(session *discordgo.Session, intr *discordgo.InteractionCreate) {
@@ -83,12 +76,7 @@ func (h *BotHanlder) handleHistory(session *discordgo.Session, intr *discordgo.I
 		}
 	}
 
-	var callerID string
-	if intr.Member != nil {
-		callerID = intr.Member.User.ID
-	} else {
-		callerID = intr.User.ID
-	}
+	callerID := extractUserID(intr)
 
 	var standup models.Standup
 	if err := h.DB.
@@ -206,14 +194,7 @@ func (h *BotHanlder) sendTimezoneMenu(session *discordgo.Session, intr *discordg
 }
 
 func (h *BotHanlder) handleTimezoneSelection(session *discordgo.Session, intr *discordgo.InteractionCreate) {
-	var userID string
-	if intr.Member != nil {
-		userID = intr.Member.User.ID
-	} else if intr.User != nil {
-		userID = intr.User.ID
-	} else if intr.Message != nil && intr.Message.Author != nil {
-		userID = intr.Message.Author.ID
-	}
+	userID := extractUserID(intr)
 
 	if userID == "" {
 		log.Println("Could not determine UserID for timezone selection")
@@ -238,14 +219,7 @@ func (h *BotHanlder) handleTimezoneSelection(session *discordgo.Session, intr *d
 	profile.Timezone = selectedTZ
 	h.DB.Save(&profile)
 
-	session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
-		Type: discordgo.InteractionResponseUpdateMessage,
-		Data: &discordgo.InteractionResponseData{
-			Content:    fmt.Sprintf("✅ Timezone set to `%s`!", selectedTZ),
-			Components: []discordgo.MessageComponent{},
-			Flags: discordgo.MessageFlagsEphemeral,
-		},
-	})
+	updateMessage(session, intr, fmt.Sprintf("✅ Timezone set to `%s`!", selectedTZ), nil)
 
 	state, err := store.GetState(h.Redis, userID)
 	if err == nil && state.StandupID != 0 {

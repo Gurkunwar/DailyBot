@@ -2,6 +2,7 @@ package bot
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/bwmarrin/discordgo"
 )
@@ -43,4 +44,43 @@ func formatLocalTime(dbTimeStr string, userTZ string) string {
 	}
 
 	return fmt.Sprintf("**%s** (%s)", dbTimeStr, userTZ)
+}
+
+func getUserLocalTime(tz string) time.Time {
+	loc, err := time.LoadLocation(tz)
+	if err != nil || tz == "" {
+		loc = time.UTC
+	}
+	return time.Now().In(loc)
+}
+
+func respondWithMessage(session *discordgo.Session, intr *discordgo.InteractionCreate, content string, 
+		ephemeral bool) {
+			
+	flags := discordgo.MessageFlags(0)
+	if ephemeral {
+		flags = discordgo.MessageFlagsEphemeral
+	}
+	session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseChannelMessageWithSource,
+		Data: &discordgo.InteractionResponseData{
+			Content: content,
+			Flags:   flags,
+		},
+	})
+}
+
+func updateMessage(session *discordgo.Session, intr *discordgo.InteractionCreate, content string,
+	components []discordgo.MessageComponent) {
+
+	if components == nil {
+		components = []discordgo.MessageComponent{}
+	}
+	session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseUpdateMessage,
+		Data: &discordgo.InteractionResponseData{
+			Content:    content,
+			Components: components,
+		},
+	})
 }

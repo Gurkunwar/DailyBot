@@ -28,8 +28,6 @@ func (h *BotHanlder) OnInteraction(session *discordgo.Session, intr *discordgo.I
 			h.handleHelp(session, intr)
 		case "delete-my-data":
 			h.handleDeleteMyData(session, intr)
-		case "set-channel":
-			h.handleSetChannel(session, intr)
 		case "create-standup":
 			h.handleCreateStandup(session, intr)
 		case "edit-standup":
