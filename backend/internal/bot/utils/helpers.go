@@ -1,4 +1,4 @@
-package bot
+package utils
 
 import (
 	"fmt"
@@ -7,7 +7,7 @@ import (
 	"github.com/bwmarrin/discordgo"
 )
 
-func extractUserID(intr *discordgo.InteractionCreate) string {
+func ExtractUserID(intr *discordgo.InteractionCreate) string {
 	if intr.Member != nil {
 		return intr.Member.User.ID
 	}
@@ -20,7 +20,7 @@ func extractUserID(intr *discordgo.InteractionCreate) string {
 	return ""
 }
 
-func respondWithError(session *discordgo.Session, interaction *discordgo.Interaction, message string) {
+func RespondWithError(session *discordgo.Session, interaction *discordgo.Interaction, message string) {
 	session.InteractionRespond(interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseChannelMessageWithSource,
 		Data: &discordgo.InteractionResponseData{
@@ -30,7 +30,7 @@ func respondWithError(session *discordgo.Session, interaction *discordgo.Interac
 	})
 }
 
-func isServerAdmin(intr *discordgo.InteractionCreate) bool {
+func IsServerAdmin(intr *discordgo.InteractionCreate) bool {
 	if intr.Member == nil {
 		return false
 	}
@@ -38,7 +38,7 @@ func isServerAdmin(intr *discordgo.InteractionCreate) bool {
 	return intr.Member.Permissions&discordgo.PermissionAdministrator != 0
 }
 
-func formatLocalTime(dbTimeStr string, userTZ string) string {
+func FormatLocalTime(dbTimeStr string, userTZ string) string {
 	if userTZ == "" {
 		return fmt.Sprintf("**%s (Your Local Time)**\n> ⚠️ *Wait! You haven't set a timezone yet. Run `/timezone` so this triggers at your actual morning!*", dbTimeStr)
 	}
@@ -46,7 +46,7 @@ func formatLocalTime(dbTimeStr string, userTZ string) string {
 	return fmt.Sprintf("**%s** (%s)", dbTimeStr, userTZ)
 }
 
-func getUserLocalTime(tz string) time.Time {
+func GetUserLocalTime(tz string) time.Time {
 	loc, err := time.LoadLocation(tz)
 	if err != nil || tz == "" {
 		loc = time.UTC
@@ -54,7 +54,7 @@ func getUserLocalTime(tz string) time.Time {
 	return time.Now().In(loc)
 }
 
-func respondWithMessage(session *discordgo.Session, intr *discordgo.InteractionCreate, content string, 
+func RespondWithMessage(session *discordgo.Session, intr *discordgo.InteractionCreate, content string, 
 		ephemeral bool) {
 			
 	flags := discordgo.MessageFlags(0)
@@ -70,7 +70,7 @@ func respondWithMessage(session *discordgo.Session, intr *discordgo.InteractionC
 	})
 }
 
-func updateMessage(session *discordgo.Session, intr *discordgo.InteractionCreate, content string,
+func UpdateMessage(session *discordgo.Session, intr *discordgo.InteractionCreate, content string,
 	components []discordgo.MessageComponent) {
 
 	if components == nil {

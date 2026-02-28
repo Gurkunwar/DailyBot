@@ -40,7 +40,7 @@ func main() {
 
 	handler := bot.NewBotHandler(dg, rdb, db, standupSvc, userSvc)
 
-	standupSvc.TriggerFunc = handler.InitiateStandup
+	standupSvc.TriggerFunc = handler.Standups.InitiateStandup
 
 	dg.AddHandler(handler.OnInteraction)
 

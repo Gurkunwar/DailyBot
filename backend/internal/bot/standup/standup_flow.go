@@ -1,4 +1,4 @@
-package bot
+package standup
 
 import (
 	"context"
@@ -7,12 +7,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Gurkunwar/dailybot/internal/bot/utils"
 	"github.com/Gurkunwar/dailybot/internal/models"
 	"github.com/Gurkunwar/dailybot/internal/store"
 	"github.com/bwmarrin/discordgo"
 )
 
-func (h *BotHanlder) InitiateStandup(s *discordgo.Session, userID string, guildID, channelID string, standupID uint) {
+func (h *StandupHandler) InitiateStandup(s *discordgo.Session, userID string, guildID, channelID string, standupID uint) {
 	var profile models.UserProfile
 	h.DB.Unscoped().Preload("Standups").Where("user_id = ?", userID).First(&profile)
 
@@ -87,7 +88,7 @@ func (h *BotHanlder) InitiateStandup(s *discordgo.Session, userID string, guildI
 	h.startQuestionFlow(s, channel.ID, userID, targetStandup)
 }
 
-func (h *BotHanlder) startQuestionFlow(session *discordgo.Session, channelID, userID string, standup models.Standup) {
+func (h *StandupHandler) startQuestionFlow(session *discordgo.Session, channelID, userID string, standup models.Standup) {
 	state := models.StandupState{
 		UserID:    userID,
 		GuildID:   standup.GuildID,
@@ -119,7 +120,7 @@ func (h *BotHanlder) startQuestionFlow(session *discordgo.Session, channelID, us
 	})
 }
 
-func (h *BotHanlder) openSingleQuestionModal(session *discordgo.Session,
+func (h *StandupHandler) openSingleQuestionModal(session *discordgo.Session,
 	intr *discordgo.InteractionCreate, qNum int) {
 
 	err := session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
@@ -148,7 +149,7 @@ func (h *BotHanlder) openSingleQuestionModal(session *discordgo.Session,
 	}
 }
 
-func (h *BotHanlder) handleCreateQuestionSubmit(session *discordgo.Session,
+func (h *StandupHandler) handleCreateQuestionSubmit(session *discordgo.Session,
 	intr *discordgo.InteractionCreate,
 	customID string) {
 
@@ -203,7 +204,7 @@ func (h *BotHanlder) handleCreateQuestionSubmit(session *discordgo.Session,
 	})
 }
 
-func (h *BotHanlder) openSingleAnswerModal(
+func (h *StandupHandler) openSingleAnswerModal(
 	session *discordgo.Session,
 	intr *discordgo.InteractionCreate,
 	standupIDStr string,
@@ -267,7 +268,7 @@ func (h *BotHanlder) openSingleAnswerModal(
 	}
 }
 
-func (h *BotHanlder) handleSingleAnswerSubmit(session *discordgo.Session,
+func (h *StandupHandler) handleSingleAnswerSubmit(session *discordgo.Session,
 	intr *discordgo.InteractionCreate,
 	standupID uint,
 	qIndex int) {
@@ -326,20 +327,20 @@ func (h *BotHanlder) handleSingleAnswerSubmit(session *discordgo.Session,
 	h.Redis.Del(context.Background(), "state:"+redisKey)
 }
 
-func (h *BotHanlder) handleSkipStandup(session *discordgo.Session,
+func (h *StandupHandler) handleSkipStandup(session *discordgo.Session,
 	intr *discordgo.InteractionCreate, standupID uint) {
-	userID := extractUserID(intr)
+	userID := utils.ExtractUserID(intr)
 
 	var standup models.Standup
 	if err := h.DB.First(&standup, standupID).Error; err != nil {
-		respondWithError(session, intr.Interaction, "Standup not found.")
+		utils.RespondWithError(session, intr.Interaction, "Standup not found.")
 		return
 	}
 
 	var userProfile models.UserProfile
 	h.DB.Where("user_id = ?", userID).First(&userProfile)
 
-	localToday := getUserLocalTime(userProfile.Timezone).Format("2006-01-02")
+	localToday := utils.GetUserLocalTime(userProfile.Timezone).Format("2006-01-02")
 
 	history := models.StandupHistory{
 		UserID:    userID,
@@ -360,11 +361,11 @@ func (h *BotHanlder) handleSkipStandup(session *discordgo.Session,
 		Embeds: []*discordgo.MessageEmbed{embed},
 	})
 
-	updateMessage(session, intr,
+	utils.UpdateMessage(session, intr,
 		"✅ You have successfully skipped today's standup. Your team has been notified!", nil)
 }
 
-func (h *BotHanlder) finalizeStandup(s *discordgo.Session, state *models.StandupState) {
+func (h *StandupHandler) finalizeStandup(s *discordgo.Session, state *models.StandupState) {
 	var standup models.Standup
 	result := h.DB.First(&standup, state.StandupID)
 
@@ -376,7 +377,7 @@ func (h *BotHanlder) finalizeStandup(s *discordgo.Session, state *models.Standup
 	var userProfile models.UserProfile
 	h.DB.Where("user_id = ?", state.UserID).First(&userProfile)
 
-	localToday := getUserLocalTime(userProfile.Timezone).Format("2006-01-02")
+	localToday := utils.GetUserLocalTime(userProfile.Timezone).Format("2006-01-02")
 
 	history := models.StandupHistory{
 		UserID:    state.UserID,
@@ -419,7 +420,7 @@ func (h *BotHanlder) finalizeStandup(s *discordgo.Session, state *models.Standup
 	})
 }
 
-func (h *BotHanlder) sendStandupSelectionMenu(s *discordgo.Session,
+func (h *StandupHandler) sendStandupSelectionMenu(s *discordgo.Session,
 	userID,
 	guildID, channelID string,
 	standups []models.Standup) {
@@ -464,8 +465,8 @@ func (h *BotHanlder) sendStandupSelectionMenu(s *discordgo.Session,
 	})
 }
 
-func (h *BotHanlder) handleStandupSelection(session *discordgo.Session, intr *discordgo.InteractionCreate) {
-	userID := extractUserID(intr)
+func (h *StandupHandler) handleStandupSelection(session *discordgo.Session, intr *discordgo.InteractionCreate) {
+	userID := utils.ExtractUserID(intr)
 
 	if len(intr.MessageComponentData().Values) == 0 {
 		return
@@ -483,7 +484,7 @@ func (h *BotHanlder) handleStandupSelection(session *discordgo.Session, intr *di
 
 	h.DB.Model(&user).Association("Standups").Append(&standup)
 
-	updateMessage(session, intr, fmt.Sprintf("✅ You joined **%s**!", standup.Name), nil)
+	utils.UpdateMessage(session, intr, fmt.Sprintf("✅ You joined **%s**!", standup.Name), nil)
 
 	h.InitiateStandup(session, userID, standup.GuildID, intr.ChannelID, standup.ID)
 }
