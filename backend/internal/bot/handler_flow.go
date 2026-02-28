@@ -106,6 +106,11 @@ func (h *BotHanlder) startQuestionFlow(session *discordgo.Session, channelID, us
 						Style:    discordgo.PrimaryButton,
 						CustomID: fmt.Sprintf("open_standup_modal_%d", standup.ID),
 					},
+					discordgo.Button{
+						Label:    "⏭️ Skip Today",
+						Style:    discordgo.SecondaryButton,
+						CustomID: fmt.Sprintf("skip_standup_%d", standup.ID),
+					},
 				},
 			},
 		},
@@ -152,8 +157,8 @@ func (h *BotHanlder) handleCreateQuestionSubmit(session *discordgo.Session,
 	if err != nil {
 		session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
 			Type: discordgo.InteractionResponseChannelMessageWithSource,
-			Data: &discordgo.InteractionResponseData{Content: "❌ Session expired. Please start over.", 
-			Flags: discordgo.MessageFlagsEphemeral},
+			Data: &discordgo.InteractionResponseData{Content: "❌ Session expired. Please start over.",
+				Flags: discordgo.MessageFlagsEphemeral},
 		})
 		return
 	}
@@ -266,8 +271,8 @@ func (h *BotHanlder) handleSingleAnswerSubmit(session *discordgo.Session,
 	if err != nil {
 		session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
 			Type: discordgo.InteractionResponseChannelMessageWithSource,
-			Data: &discordgo.InteractionResponseData{Content: "❌ Session expired. Please run `/start` to try again.", 
-			Flags: discordgo.MessageFlagsEphemeral},
+			Data: &discordgo.InteractionResponseData{Content: "❌ Session expired. Please run `/start` to try again.",
+				Flags: discordgo.MessageFlagsEphemeral},
 		})
 		return
 	}
@@ -311,6 +316,54 @@ func (h *BotHanlder) handleSingleAnswerSubmit(session *discordgo.Session,
 
 	h.finalizeStandup(session, state)
 	h.Redis.Del(context.Background(), "state:"+intr.User.ID)
+}
+
+func (h *BotHanlder) handleSkipStandup(session *discordgo.Session,
+	intr *discordgo.InteractionCreate, standupID uint) {
+	userID := extractUserID(intr)
+
+	var standup models.Standup
+	if err := h.DB.First(&standup, standupID).Error; err != nil {
+		respondWithError(session, intr.Interaction, "Standup not found.")
+		return
+	}
+
+	var userProfile models.UserProfile
+	h.DB.Where("user_id = ?", userID).First(&userProfile)
+
+	loc, err := time.LoadLocation(userProfile.Timezone)
+	if err != nil {
+		loc = time.UTC
+	}
+	localToday := time.Now().In(loc).Format("2006-01-02")
+
+	history := models.StandupHistory{
+		UserID:    userID,
+		StandupID: standupID,
+		Date:      localToday,
+		Answers:   []string{"Skipped / OOO"},
+	}
+	h.DB.Create(&history)
+
+	embed := &discordgo.MessageEmbed{
+		Title:       fmt.Sprintf("⏭️ %s Update (Skipped)", standup.Name),
+		Description: fmt.Sprintf("<@%s> skipped their standup today.", userID),
+		Color:       0x808080,
+		Timestamp:   time.Now().Format(time.RFC3339),
+	}
+
+	session.ChannelMessageSendComplex(standup.ReportChannelID, &discordgo.MessageSend{
+		Content: fmt.Sprintf("🔔 Update from <@%s>", userID),
+		Embeds:  []*discordgo.MessageEmbed{embed},
+	})
+
+	session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseUpdateMessage,
+		Data: &discordgo.InteractionResponseData{
+			Content:    "✅ You have successfully skipped today's standup. Your team has been notified!",
+			Components: []discordgo.MessageComponent{},
+		},
+	})
 }
 
 func (h *BotHanlder) finalizeStandup(s *discordgo.Session, state *models.StandupState) {

@@ -54,6 +54,10 @@ func (h *BotHanlder) OnInteraction(session *discordgo.Session, intr *discordgo.I
 			fmt.Sscanf(customID, "add_next_q_%d", &nextQ)
 			h.openSingleQuestionModal(session, intr, nextQ)
 
+		} else if strings.HasPrefix(customID, "skip_standup_") {
+			var standupID uint
+			fmt.Sscanf(customID, "skip_standup_%d", &standupID)
+			h.handleSkipStandup(session, intr, standupID)
 		} else if customID == "finalize_create_standup" {
 			h.finalizeCreateStandup(session, intr)
 
