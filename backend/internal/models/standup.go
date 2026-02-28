@@ -13,5 +13,6 @@ type Standup struct {
 	ReportChannelID string         `json:"report_channel_id"`
 	Questions       pq.StringArray `gorm:"type:text[]" json:"questions"`
 	Time            string         `default:"09:00" json:"time"`
+	Days            string
 	Participants    []UserProfile  `gorm:"many2many:standup_participants;" json:"participants"`
 }

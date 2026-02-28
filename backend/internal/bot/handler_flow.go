@@ -94,7 +94,9 @@ func (h *BotHanlder) startQuestionFlow(session *discordgo.Session, channelID, us
 		StandupID: standup.ID,
 		Answers:   []string{},
 	}
-	store.SaveState(h.Redis, userID, state)
+
+	redisKey := fmt.Sprintf("%s_%d", userID, standup.ID)
+	store.SaveState(h.Redis, redisKey, state)
 
 	session.ChannelMessageSendComplex(channelID, &discordgo.MessageSend{
 		Content: "Ready to submit your daily standup?",
@@ -219,7 +221,8 @@ func (h *BotHanlder) openSingleAnswerModal(
 			StandupID: standup.ID,
 			Answers:   []string{},
 		}
-		store.SaveState(h.Redis, intr.User.ID, state)
+		redisKey := fmt.Sprintf("%s_%d", intr.User.ID, standup.ID)
+		store.SaveState(h.Redis, redisKey, state)
 	}
 
 	questionText := standup.Questions[qIndex]
@@ -267,7 +270,8 @@ func (h *BotHanlder) handleSingleAnswerSubmit(session *discordgo.Session,
 
 	answer := intr.ModalSubmitData().Components[0].(*discordgo.ActionsRow).Components[0].(*discordgo.TextInput).Value
 
-	state, err := store.GetState(h.Redis, intr.User.ID)
+	redisKey := fmt.Sprintf("%s_%d", intr.User.ID, standupID)
+	state, err := store.GetState(h.Redis, redisKey)
 	if err != nil {
 		session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
 			Type: discordgo.InteractionResponseChannelMessageWithSource,
@@ -278,7 +282,7 @@ func (h *BotHanlder) handleSingleAnswerSubmit(session *discordgo.Session,
 	}
 
 	state.Answers = append(state.Answers, strings.TrimSpace(answer))
-	store.SaveState(h.Redis, intr.User.ID, *state)
+	store.SaveState(h.Redis, redisKey, *state)
 
 	var standup models.Standup
 	h.DB.First(&standup, standupID)
@@ -315,7 +319,7 @@ func (h *BotHanlder) handleSingleAnswerSubmit(session *discordgo.Session,
 	})
 
 	h.finalizeStandup(session, state)
-	h.Redis.Del(context.Background(), "state:"+intr.User.ID)
+	h.Redis.Del(context.Background(), "state:" + redisKey)
 }
 
 func (h *BotHanlder) handleSkipStandup(session *discordgo.Session,
@@ -353,7 +357,7 @@ func (h *BotHanlder) handleSkipStandup(session *discordgo.Session,
 	}
 
 	session.ChannelMessageSendComplex(standup.ReportChannelID, &discordgo.MessageSend{
-		Content: fmt.Sprintf("🔔 Update from <@%s>", userID),
+		// Content: fmt.Sprintf("🔔 Update from <@%s>", userID),
 		Embeds:  []*discordgo.MessageEmbed{embed},
 	})
 
@@ -419,9 +423,8 @@ func (h *BotHanlder) finalizeStandup(s *discordgo.Session, state *models.Standup
 		Timestamp: time.Now().Format(time.RFC3339),
 	}
 
-	// s.ChannelMessageSendEmbed(standup.ReportChannelID, embed)
 	s.ChannelMessageSendComplex(standup.ReportChannelID, &discordgo.MessageSend{
-		Content: fmt.Sprintf("🔔 Update from <@%s>", state.UserID),
+		// Content: fmt.Sprintf("🔔 Update from <@%s>", state.UserID),
 		Embeds:  []*discordgo.MessageEmbed{embed},
 	})
 }

@@ -98,6 +98,12 @@ var Commands = []*discordgo.ApplicationCommand{
 				Description: "New time to trigger standup (HH:MM in 24h format, e.g. 09:30)",
 				Required:    false,
 			},
+			{
+				Type:        discordgo.ApplicationCommandOptionString,
+				Name:        "new_days",
+				Description: "Comma-separated days (e.g. Monday,Tuesday,Wednesday,Thursday,Friday)",
+				Required:    false,
+			},
 		},
 	},
 	{

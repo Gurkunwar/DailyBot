@@ -3,6 +3,7 @@ package services
 import (
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/Gurkunwar/dailybot/internal/models"
@@ -38,6 +39,11 @@ func (s *StandupService) CheckAndTriggerStandups() {
 			continue
 		}
 
+		activeDays := standup.Days
+		if activeDays == "" {
+			activeDays = "Monday,Tuesday,Wednesday,Thursday,Friday"
+		}
+
 		for _, user := range standup.Participants {
 			tz := user.Timezone
 			if tz == "" {
@@ -52,6 +58,11 @@ func (s *StandupService) CheckAndTriggerStandups() {
 
 			userLocalTime := time.Now().In(loc)
 
+			currentDay := userLocalTime.Weekday().String()
+			if !strings.Contains(activeDays, currentDay) {
+				continue
+			}
+			
 			if userLocalTime.Hour() == targetHour && userLocalTime.Minute() == targetMinute {
 				today := userLocalTime.Format("2006-01-02")
 				

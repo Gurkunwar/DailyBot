@@ -28,7 +28,7 @@ func (h *BotHanlder) handleCreateStandup(session *discordgo.Session, intr *disco
 		Answers: []string{name, channelID, membersRaw, standupTime},
 	}
 
-	store.SaveState(h.Redis, intr.Member.User.ID + "_create", tempState)
+	store.SaveState(h.Redis, intr.Member.User.ID+"_create", tempState)
 	h.openSingleQuestionModal(session, intr, 1)
 }
 
@@ -112,7 +112,10 @@ func (h *BotHanlder) finalizeCreateStandup(session *discordgo.Session, intr *dis
 
 	timeDisplay := formatLocalTime(standup.Time, manager.Timezone)
 
-	contentStr := fmt.Sprintf("🎉 **Standup '%s' created successfully!**\n⏰ Scheduled for: %s\nAdded %d questions and %d members.",
+	contentStr := fmt.Sprintf("🎉 **Standup '%s' created successfully!**\n"+
+		"⏰ Scheduled for: %s on **Monday-Friday**\n"+
+		"👥 Added %d questions and %d members.\n\n"+
+		"*💡 Tip: Want to run this on weekends? Use the `/edit-standup` command to change the active days!*",
 		standup.Name, timeDisplay, len(standup.Questions), addedCount)
 	components := []discordgo.MessageComponent{}
 
@@ -173,7 +176,29 @@ func (h *BotHanlder) handleEditStandup(session *discordgo.Session, intr *discord
 	} else {
 		responseMsg += "ℹ️ No basic settings were changed.\n\n"
 	}
-	responseMsg += "Click the button below to edit your team's daily questions!"
+	responseMsg += "Use the menu below to change active days, or edit your team's questions!"
+
+	activeDaysStr := standup.Days
+	if activeDaysStr == "" {
+		activeDaysStr = "Monday,Tuesday,Wednesday,Thursday,Friday"
+	}
+
+	daysMap := make(map[string]bool)
+	for _, d := range strings.Split(activeDaysStr, ",") {
+		daysMap[strings.TrimSpace(d)] = true
+	}
+
+	daysOfWeek := []string{"Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"}
+	var dayOptions []discordgo.SelectMenuOption
+	for _, d := range daysOfWeek {
+		dayOptions = append(dayOptions, discordgo.SelectMenuOption{
+			Label:   d,
+			Value:   d,
+			Default: daysMap[d],
+		})
+	}
+
+	minValues := 1
 
 	session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseChannelMessageWithSource,
@@ -183,10 +208,26 @@ func (h *BotHanlder) handleEditStandup(session *discordgo.Session, intr *discord
 			Components: []discordgo.MessageComponent{
 				discordgo.ActionsRow{
 					Components: []discordgo.MessageComponent{
+						discordgo.SelectMenu{
+							CustomID:    fmt.Sprintf("edit_days_%d", standup.ID),
+							Placeholder: "Select active days...",
+							MinValues:   &minValues,
+							MaxValues:   7,
+							Options:     dayOptions,
+						},
+					},
+				},
+				discordgo.ActionsRow{
+					Components: []discordgo.MessageComponent{
 						discordgo.Button{
 							Label:    "📝 Edit Questions",
 							Style:    discordgo.SecondaryButton,
 							CustomID: fmt.Sprintf("open_q_dash_%d", standup.ID),
+						},
+						discordgo.Button{
+							Label:    "✅ Done",
+							Style:    discordgo.SuccessButton,
+							CustomID: fmt.Sprintf("finish_q_dash_%d", standup.ID),
 						},
 					},
 				},
@@ -243,12 +284,12 @@ func (h *BotHanlder) showQuestionDashboard(session *discordgo.Session,
 		Components: []discordgo.MessageComponent{
 			discordgo.Button{
 				Label:    "➕ Add New Question",
-				Style:    discordgo.SuccessButton,
+				Style:    discordgo.PrimaryButton,
 				CustomID: fmt.Sprintf("add_q_btn_%d", standup.ID),
 			},
 			discordgo.Button{
-				Label:    "✅ Finish & Save",
-				Style:    discordgo.PrimaryButton,
+				Label:    "✅ Done",
+				Style:    discordgo.SuccessButton,
 				CustomID: fmt.Sprintf("finish_q_dash_%d", standup.ID),
 			},
 		},
@@ -293,6 +334,72 @@ func (h *BotHanlder) handleEditSingleQuestionPrompt(session *discordgo.Session,
 							Value:     standup.Questions[qIndex],
 							Required:  false,
 							MaxLength: 300,
+						},
+					},
+				},
+			},
+		},
+	})
+}
+
+func (h *BotHanlder) handleEditDaysSubmit(session *discordgo.Session,
+	intr *discordgo.InteractionCreate, standupID uint) {
+	var standup models.Standup
+	if err := h.DB.First(&standup, standupID).Error; err != nil {
+		respondWithError(session, intr.Interaction, "Standup not found.")
+		return
+	}
+
+	selectedDays := intr.MessageComponentData().Values
+	standup.Days = strings.Join(selectedDays, ",")
+	h.DB.Save(&standup)
+
+	daysMap := make(map[string]bool)
+	for _, d := range selectedDays {
+		daysMap[d] = true
+	}
+
+	daysOfWeek := []string{"Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"}
+	var dayOptions []discordgo.SelectMenuOption
+	for _, d := range daysOfWeek {
+		dayOptions = append(dayOptions, discordgo.SelectMenuOption{
+			Label:   d,
+			Value:   d,
+			Default: daysMap[d],
+		})
+	}
+
+	minValues := 1
+	prettyDays := strings.ReplaceAll(standup.Days, ",", ", ")
+
+	session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseUpdateMessage,
+		Data: &discordgo.InteractionResponseData{
+			Content: fmt.Sprintf("✅ Active days for **%s** have been updated to:\n**%s**\n\nUse the menu below to make further changes, or click Done.",
+				standup.Name, prettyDays),
+			Components: []discordgo.MessageComponent{
+				discordgo.ActionsRow{
+					Components: []discordgo.MessageComponent{
+						discordgo.SelectMenu{
+							CustomID:    fmt.Sprintf("edit_days_%d", standup.ID),
+							Placeholder: "Select active days...",
+							MinValues:   &minValues,
+							MaxValues:   7,
+							Options:     dayOptions,
+						},
+					},
+				},
+				discordgo.ActionsRow{
+					Components: []discordgo.MessageComponent{
+						discordgo.Button{
+							Label:    "📝 Edit Questions",
+							Style:    discordgo.SecondaryButton,
+							CustomID: fmt.Sprintf("open_q_dash_%d", standup.ID),
+						},
+						discordgo.Button{
+							Label:    "✅ Done",
+							Style:    discordgo.SuccessButton,
+							CustomID: fmt.Sprintf("finish_q_dash_%d", standup.ID),
 						},
 					},
 				},
@@ -359,8 +466,8 @@ func (h *BotHanlder) handleFinishQuestionEdit(session *discordgo.Session,
 	session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseUpdateMessage,
 		Data: &discordgo.InteractionResponseData{
-			Content: fmt.Sprintf("✅ **Done!** The questions for **%s** are locked in.\n*(Total questions: %d)*",
-				standup.Name, len(standup.Questions)),
+			Content: fmt.Sprintf("✅ **Done!** The settings and questions for **%s** are fully saved and locked in.",
+				standup.Name),
 			Components: []discordgo.MessageComponent{},
 		},
 	})

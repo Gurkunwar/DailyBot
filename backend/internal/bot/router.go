@@ -77,6 +77,11 @@ func (h *BotHanlder) OnInteraction(session *discordgo.Session, intr *discordgo.I
 		} else if customID == "select_standup_join" {
 			h.handleStandupSelection(session, intr)
 
+		} else if strings.HasPrefix(customID, "edit_days_") {
+			var standupID uint
+			fmt.Sscanf(customID, "edit_days_%d", &standupID)
+			h.handleEditDaysSubmit(session, intr, standupID)
+
 		} else if strings.HasPrefix(customID, "open_q_dash_") {
 			var standupID uint
 			fmt.Sscanf(customID, "open_q_dash_%d", &standupID)
