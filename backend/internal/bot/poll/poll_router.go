@@ -9,10 +9,14 @@ import (
 func (h *PollHandler) PollRouter(session *discordgo.Session, intr *discordgo.InteractionCreate) bool {
 	switch intr.Type {
 	case discordgo.InteractionApplicationCommand:
+		cmdName := intr.ApplicationCommandData().Name
 		if intr.ApplicationCommandData().Name == "poll" {
 			h.handleInitPoll(session, intr)
 			return true
-		}
+		} else if cmdName == "poll-audit" {
+            h.HandlePollAudit(session, intr)
+            return true
+        }
 	case discordgo.InteractionMessageComponent:
 		customID := intr.MessageComponentData().CustomID
 

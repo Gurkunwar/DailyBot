@@ -39,7 +39,7 @@ func (h *PollHandler) handlePublishPoll(session *discordgo.Session, intr *discor
 		h.DB.Create(&option)
 
 		emptyBar := strings.Repeat("⬛", 10)
-        descriptionBuilder.WriteString(fmt.Sprintf("**%s**\n> %s 0 votes (0%%)\n\n", option.Label, emptyBar))
+		descriptionBuilder.WriteString(fmt.Sprintf("**%s**\n> %s 0 votes (0%%)\n\n", option.Label, emptyBar))
 
 		buttons = append(buttons, discordgo.Button{
 			Label:    option.Label,
@@ -58,8 +58,8 @@ func (h *PollHandler) handlePublishPoll(session *discordgo.Session, intr *discor
 	}
 
 	editQuestionBtn := discordgo.Button{
-		Label: "✏️ Edit Question",
-		Style: discordgo.SecondaryButton,
+		Label:    "✏️ Edit Question",
+		Style:    discordgo.SecondaryButton,
 		CustomID: fmt.Sprintf("poll_btn_edit_%d", poll.ID),
 	}
 
@@ -75,8 +75,8 @@ func (h *PollHandler) handlePublishPoll(session *discordgo.Session, intr *discor
 		Title:       "📊 " + poll.Question,
 		Description: descriptionBuilder.String(),
 		Color:       0x5865F2,
-		Footer: &discordgo.MessageEmbedFooter{Text: fmt.Sprintf("Poll created by %s • Total Votes: 0",
-			intr.Member.User.Username)},
+		Footer: &discordgo.MessageEmbedFooter{Text: fmt.Sprintf("ID: %d • Created by %s • Total Votes: 0",
+			poll.ID, intr.Member.User.Username)},
 	}
 
 	msg, err := session.ChannelMessageSendComplex(intr.ChannelID, &discordgo.MessageSend{
@@ -206,7 +206,7 @@ func (h *PollHandler) saveEditedQuestion(session *discordgo.Session, intr *disco
 		Description: descriptionBuilder.String(),
 		Color:       0x5865F2,
 		Footer: &discordgo.MessageEmbedFooter{
-			Text: fmt.Sprintf("Total Votes: %d (Edited)", totalVotes),
+			Text: fmt.Sprintf("ID: %d • Total Votes: %d (Edited)", poll.ID, totalVotes),
 		},
 	}
 
@@ -274,8 +274,8 @@ func (h *PollHandler) handleEndPoll(session *discordgo.Session, intr *discordgo.
 		Description: descriptionBuilder.String(),
 		Color:       0xED4245,
 		Footer: &discordgo.MessageEmbedFooter{
-			Text: fmt.Sprintf("Poll closed by %s • Final Total Votes: %d",
-				intr.Member.User.Username, totalVotes),
+			Text: fmt.Sprintf("ID: %d • Closed by %s • Final Total Votes: %d",
+                poll.ID, intr.Member.User.Username, totalVotes),
 		},
 	}
 
@@ -284,6 +284,52 @@ func (h *PollHandler) handleEndPoll(session *discordgo.Session, intr *discordgo.
 		Data: &discordgo.InteractionResponseData{
 			Embeds:     []*discordgo.MessageEmbed{embed},
 			Components: []discordgo.MessageComponent{},
+		},
+	})
+}
+
+func (h *PollHandler) HandlePollAudit(session *discordgo.Session, intr *discordgo.InteractionCreate) {
+	// userID := intr.Member.User.ID
+
+	if !utils.IsServerAdmin(intr) {
+		utils.RespondWithMessage(session, intr, "⛔ This command is reserved for Server Admins.", true)
+		return
+	}
+
+	options := intr.ApplicationCommandData().Options
+	pollID := options[0].IntValue()
+
+	var poll models.Poll
+	if err := h.DB.Preload("Options").First(&poll, pollID).Error; err != nil {
+		utils.RespondWithMessage(session, intr, "❌ Poll not found. Please check the ID.", true)
+		return
+	}
+
+	var report strings.Builder
+	report.WriteString(fmt.Sprintf("📋 **Audit Report: %s**\n", poll.Question))
+	report.WriteString(fmt.Sprintf("_Poll ID: %d | Total Votes logged in DB_\n\n", poll.ID))
+
+	for _, opt := range poll.Options {
+		var votes []models.PollVote
+		h.DB.Where("poll_id = ? AND option_id = ?", poll.ID, opt.ID).Find(&votes)
+
+		report.WriteString(fmt.Sprintf("**%s** (%d votes)\n", opt.Label, len(votes)))
+
+		if len(votes) == 0 {
+			report.WriteString("> _No votes cast for this option._\n")
+		} else {
+			for _, v := range votes {
+				report.WriteString(fmt.Sprintf("> • <@%s>\n", v.UserID))
+			}
+		}
+		report.WriteString("\n")
+	}
+
+	session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseChannelMessageWithSource,
+		Data: &discordgo.InteractionResponseData{
+			Content: report.String(),
+			Flags:   discordgo.MessageFlagsEphemeral,
 		},
 	})
 }

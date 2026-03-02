@@ -101,8 +101,8 @@ var Commands = []*discordgo.ApplicationCommand{
 		},
 	},
 	{
-		Name:        "standup-info",
-		Description: "View all settings, members, and questions for a standup",
+		Name:                     "standup-info",
+		Description:              "View all settings, members, and questions for a standup",
 		DefaultMemberPermissions: &adminPerms,
 		Options: []*discordgo.ApplicationCommandOption{
 			{
@@ -180,7 +180,20 @@ var Commands = []*discordgo.ApplicationCommand{
 		},
 	},
 	{
-		Name: "poll",
+		Name:        "poll",
 		Description: "Launch the interactive Poll Builder dashboard",
+	},
+	{
+		Name:        "poll-audit",
+		Description: "📊 (Admin Only) See a detailed breakdown of who voted for what.",
+		DefaultMemberPermissions: &adminPerms,
+		Options: []*discordgo.ApplicationCommandOption{
+			{
+				Type:        discordgo.ApplicationCommandOptionInteger,
+				Name:        "poll-id",
+				Description: "The ID of the poll (found in the poll footer or DB)",
+				Required:    true,
+			},
+		},
 	},
 }
