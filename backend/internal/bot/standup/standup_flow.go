@@ -484,7 +484,8 @@ func (h *StandupHandler) handleStandupSelection(session *discordgo.Session, intr
 
 	h.DB.Model(&user).Association("Standups").Append(&standup)
 
-	utils.UpdateMessage(session, intr, fmt.Sprintf("✅ You joined **%s**!", standup.Name), nil)
+	session.ChannelMessageDelete(intr.ChannelID, intr.Message.ID)
+    utils.RespondWithMessage(session, intr, fmt.Sprintf("✅ You joined **%s**!", standup.Name), true)
 
 	h.InitiateStandup(session, userID, standup.GuildID, intr.ChannelID, standup.ID)
 }

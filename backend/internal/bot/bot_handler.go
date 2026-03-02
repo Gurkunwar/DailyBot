@@ -51,7 +51,8 @@ func (h *BotHanlder) OnInteraction(session *discordgo.Session, intr *discordgo.I
 		return
 	}
 
-	if intr.Type == discordgo.InteractionApplicationCommand {
+	switch intr.Type {
+	case discordgo.InteractionApplicationCommand:
 		switch intr.ApplicationCommandData().Name {
 		case "help":
 			h.handleHelp(session, intr)
@@ -60,7 +61,7 @@ func (h *BotHanlder) OnInteraction(session *discordgo.Session, intr *discordgo.I
 		case "delete-my-data":
 			h.handleDeleteMyData(session, intr)
 		}
-	} else if intr.Type == discordgo.InteractionMessageComponent {
+	case discordgo.InteractionMessageComponent:
 		if intr.MessageComponentData().CustomID == "select_tz" {
 			h.handleTimezoneSelection(session, intr)
 		}

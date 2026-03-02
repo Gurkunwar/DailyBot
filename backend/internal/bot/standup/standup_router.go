@@ -26,12 +26,6 @@ func (h *StandupHandler) StandupRouter(session *discordgo.Session, intr *discord
 			})
 			h.InitiateStandup(session, userID, intr.GuildID, intr.ChannelID, 0)
 			return true
-		// case "help":
-		// 	h.handleHelp(session, intr)
-		// 	return true
-		// case "delete-my-data":
-		// 	h.handleDeleteMyData(session, intr)
-		// 	return true
 		case "create-standup":
 			h.handleCreateStandup(session, intr)
 			return true
@@ -50,9 +44,6 @@ func (h *StandupHandler) StandupRouter(session *discordgo.Session, intr *discord
 		case "history":
 			h.handleHistory(session, intr)
 			return true
-		// case "timezone":
-		// 	h.sendTimezoneMenu(session, intr, 0)
-		// 	return true
 		case "standup-info":
 			h.handleStandupInfo(session, intr)
 			return true
