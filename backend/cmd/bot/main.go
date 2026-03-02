@@ -53,7 +53,12 @@ func main() {
 	bot.RegisterCommands(dg)
 
 	apiServer := api.NewServer(db, dg, standupSvc)
-	go apiServer.Start(":8080")
+	port := os.Getenv("PORT")
+    if port == "" {
+        port = "8080"
+    }
+
+    go apiServer.Start(":" + port)
 
 	log.Println("DailyBot is live!")
 	stop := make(chan os.Signal, 1)
