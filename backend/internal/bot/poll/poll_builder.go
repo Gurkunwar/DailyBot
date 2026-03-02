@@ -175,5 +175,3 @@ func (h *PollHandler) saveOptionFromModal(session *discordgo.Session, intr *disc
 		},
 	})
 }
-
-

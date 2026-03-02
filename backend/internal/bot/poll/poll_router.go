@@ -19,6 +19,9 @@ func (h *PollHandler) PollRouter(session *discordgo.Session, intr *discordgo.Int
 		if strings.HasPrefix(customID, "vote_") {
 			h.handleVote(session, intr)
 			return true
+		} else if strings.HasPrefix(customID, "poll_btn_end_") {
+			h.handleEndPoll(session, intr)
+			return true
 		}
 
 		switch customID {
