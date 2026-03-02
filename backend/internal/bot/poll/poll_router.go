@@ -22,6 +22,9 @@ func (h *PollHandler) PollRouter(session *discordgo.Session, intr *discordgo.Int
 		} else if strings.HasPrefix(customID, "poll_btn_end_") {
 			h.handleEndPoll(session, intr)
 			return true
+		} else if strings.HasPrefix(customID, "poll_btn_edit_") {
+			h.handleEditPoll(session, intr)
+			return true
 		}
 
 		switch customID {
@@ -42,12 +45,14 @@ func (h *PollHandler) PollRouter(session *discordgo.Session, intr *discordgo.Int
 	case discordgo.InteractionModalSubmit:
 		customID := intr.ModalSubmitData().CustomID
 
-		switch customID {
-		case "poll_modal_question":
+		if customID == "poll_modal_question" {
 			h.saveQuestionFromModal(session, intr)
 			return true
-		case "poll_modal_option":
+		} else if customID == "poll_modal_option" {
 			h.saveOptionFromModal(session, intr)
+			return true
+		} else if strings.HasPrefix(customID, "poll_modal_edit_") {
+			h.saveEditedQuestion(session, intr)
 			return true
 		}
 	}
