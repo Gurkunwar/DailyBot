@@ -24,5 +24,10 @@ type PollVote struct {
 	ID       uint `gorm:"primarykey"`
 	PollID   uint
 	OptionID uint
-	UserID   uint
+	UserID   string
+}
+
+type PollState struct {
+	Question string   `json:"question"`
+	Options  []string `json:"options"`
 }

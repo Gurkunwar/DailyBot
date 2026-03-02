@@ -179,4 +179,8 @@ var Commands = []*discordgo.ApplicationCommand{
 			},
 		},
 	},
+	{
+		Name: "poll",
+		Description: "Launch the interactive Poll Builder dashboard",
+	},
 }
