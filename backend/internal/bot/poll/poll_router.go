@@ -1,62 +1,25 @@
 package poll
 
 import (
-	"strings"
-
 	"github.com/bwmarrin/discordgo"
 )
 
 func (h *PollHandler) PollRouter(session *discordgo.Session, intr *discordgo.InteractionCreate) bool {
-	switch intr.Type {
-	case discordgo.InteractionApplicationCommand:
+	if intr.Type == discordgo.InteractionApplicationCommand {
 		cmdName := intr.ApplicationCommandData().Name
-		if intr.ApplicationCommandData().Name == "poll" {
-			h.handleInitPoll(session, intr)
-			return true
-		} else if cmdName == "poll-audit" {
-            h.HandlePollAudit(session, intr)
-            return true
-        }
-	case discordgo.InteractionMessageComponent:
-		customID := intr.MessageComponentData().CustomID
 
-		if strings.HasPrefix(customID, "vote_") {
-			h.handleVote(session, intr)
+		switch cmdName {
+		case "poll":
+			h.handleCreateNativePoll(session, intr)
 			return true
-		} else if strings.HasPrefix(customID, "poll_btn_end_") {
-			h.handleEndPoll(session, intr)
+		case "poll-audit":
+			h.HandlePollAudit(session, intr)
 			return true
-		} else if strings.HasPrefix(customID, "poll_btn_edit_") {
-			h.handleEditPoll(session, intr)
+		case "poll-end":
+			h.HandlePollEnd(session, intr)
 			return true
-		}
-
-		switch customID {
-		case "poll_btn_question":
-			h.promptQuestionModal(session, intr)
-			return true
-		case "poll_btn_option":
-			h.promptOptionModal(session, intr)
-			return true
-		case "poll_btn_cancel":
-			h.handleCancelPoll(session, intr)
-			return true
-		case "poll_btn_publish":
-			h.handlePublishPoll(session, intr)
-			return true
-		}
-		return false
-	case discordgo.InteractionModalSubmit:
-		customID := intr.ModalSubmitData().CustomID
-
-		if customID == "poll_modal_question" {
-			h.saveQuestionFromModal(session, intr)
-			return true
-		} else if customID == "poll_modal_option" {
-			h.saveOptionFromModal(session, intr)
-			return true
-		} else if strings.HasPrefix(customID, "poll_modal_edit_") {
-			h.saveEditedQuestion(session, intr)
+		case "poll-export":
+			h.HandlePollExport(session, intr)
 			return true
 		}
 	}

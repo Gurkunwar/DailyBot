@@ -6,209 +6,144 @@ import (
 
 	"github.com/Gurkunwar/dailybot/internal/bot/utils"
 	"github.com/Gurkunwar/dailybot/internal/models"
-	"github.com/Gurkunwar/dailybot/internal/store"
 	"github.com/bwmarrin/discordgo"
 )
 
-func (h *PollHandler) handleInitPoll(session *discordgo.Session, intr *discordgo.InteractionCreate) {
+func (h *PollHandler) handleCreateNativePoll(session *discordgo.Session, intr *discordgo.InteractionCreate) {
 	userID := intr.Member.User.ID
+	options := intr.ApplicationCommandData().Options
 
-	store.ClearPollDraft(h.Redis, userID)
-	freshState := models.PollState{}
-	store.SavePollDraft(h.Redis, userID, freshState)
-
-	embed, components := h.renderDashboard(freshState)
-
-	session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
-		Type: discordgo.InteractionResponseChannelMessageWithSource,
-		Data: &discordgo.InteractionResponseData{
-			Embeds:     []*discordgo.MessageEmbed{embed},
-			Components: components,
-			Flags:      discordgo.MessageFlagsEphemeral,
-		},
-	})
-}
-
-func (h *PollHandler) renderDashboard(state models.PollState) (*discordgo.MessageEmbed, []discordgo.MessageComponent) {
-	qText := "📝 *No question set yet. Click 'Set Question' below.*"
-	if state.Question != "" {
-		qText = fmt.Sprintf("**%s**", state.Question)
+	optionMap := make(map[string]*discordgo.ApplicationCommandInteractionDataOption, len(options))
+	for _, opt := range options {
+		optionMap[opt.Name] = opt
 	}
 
-	var optBuilder strings.Builder
-	if len(state.Options) == 0 {
-		optBuilder.WriteString("*No options added yet.*")
-	} else {
-		for i, opt := range state.Options {
-			optBuilder.WriteString(fmt.Sprintf("**%d.** %s\n", i+1, opt))
+	questionText := optionMap["question"].StringValue()
+
+	durationHours := 24
+	if opt, ok := optionMap["duration"]; ok {
+		durationHours = int(opt.IntValue())
+	}
+
+	var pollAnswers []discordgo.PollAnswer
+
+	for i := 1; i <= 5; i++ {
+		optName := fmt.Sprintf("option_%d", i)
+		if opt, ok := optionMap[optName]; ok && opt.StringValue() != "" {
+			pollAnswers = append(pollAnswers, discordgo.PollAnswer{
+				Media: &discordgo.PollMedia{ // Pointer here!
+					Text: strings.TrimSpace(opt.StringValue()),
+				},
+			})
 		}
 	}
 
-	embed := &discordgo.MessageEmbed{
-		Title: "🛠️ Interactive Poll Builder",
-		Color: 0xFEE75C,
-		Description: fmt.Sprintf("Use the buttons below to build your poll!\n\n**Question:**\n%s\n\n**Options:**\n%s",
-			qText, optBuilder.String()),
+	nativePoll := &discordgo.Poll{
+		Question: discordgo.PollMedia{
+			Text: questionText,
+		},
+		Answers:          pollAnswers,
+		AllowMultiselect: false,
+		Duration:         durationHours,
 	}
 
-	canPublish := state.Question != "" && len(state.Options) >= 2
-	canAddOption := len(state.Options) < 10
+	msg, err := session.ChannelMessageSendComplex(intr.ChannelID, &discordgo.MessageSend{
+		Poll: nativePoll,
+	})
 
-	buttons := []discordgo.MessageComponent{
-		discordgo.Button{
-			Label:    "📝 Set Question",
-			Style:    discordgo.SecondaryButton,
-			CustomID: "poll_btn_question",
-		},
-		discordgo.Button{
-			Label:    "➕ Add Option",
-			Style:    discordgo.PrimaryButton,
-			CustomID: "poll_btn_option",
-			Disabled: !canAddOption,
-		},
-		discordgo.Button{
-			Label:    "❌ Cancel",
-			Style:    discordgo.DangerButton,
-			CustomID: "poll_btn_cancel",
-		},
-		discordgo.Button{
-			Label:    "🚀 Publish",
-			Style:    discordgo.SuccessButton,
-			CustomID: "poll_btn_publish",
-			Disabled: !canPublish,
-		},
-	}
-
-	return embed, []discordgo.MessageComponent{discordgo.ActionsRow{Components: buttons}}
-}
-
-func (h *PollHandler) promptQuestionModal(session *discordgo.Session, intr *discordgo.InteractionCreate) {
-	session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
-		Type: discordgo.InteractionResponseModal,
-		Data: &discordgo.InteractionResponseData{
-			CustomID: "poll_modal_question",
-			Title:    "Set Poll Question",
-			Components: []discordgo.MessageComponent{
-				discordgo.ActionsRow{
-					Components: []discordgo.MessageComponent{
-						discordgo.TextInput{
-							CustomID:    "question_text",
-							Label:       "What are we voting on?",
-							Style:       discordgo.TextInputShort,
-							Placeholder: "e.g., What should we order for lunch?",
-							Required:    true,
-							MaxLength:   250,
-						},
-					},
-				},
+	if err != nil {
+		session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
+			Type: discordgo.InteractionResponseChannelMessageWithSource,
+			Data: &discordgo.InteractionResponseData{
+				Content: "❌ Failed to publish native poll.",
+				Flags:   discordgo.MessageFlagsEphemeral,
 			},
-		},
-	})
-}
-
-func (h *PollHandler) promptOptionModal(session *discordgo.Session, intr *discordgo.InteractionCreate) {
-	session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
-		Type: discordgo.InteractionResponseModal,
-		Data: &discordgo.InteractionResponseData{
-			CustomID: "poll_modal_option",
-			Title:    "Add Poll Option",
-			Components: []discordgo.MessageComponent{
-				discordgo.ActionsRow{
-					Components: []discordgo.MessageComponent{
-						discordgo.TextInput{
-							CustomID:    "option_text",
-							Label:       "Option text",
-							Style:       discordgo.TextInputShort,
-							Placeholder: "e.g., Pepperoni Pizza 🍕",
-							Required:    true,
-							MaxLength:   80,
-						},
-					},
-				},
-			},
-		},
-	})
-}
-
-func (h *PollHandler) saveQuestionFromModal(session *discordgo.Session, intr *discordgo.InteractionCreate) {
-	userID := intr.Member.User.ID
-
-	questionText := intr.ModalSubmitData().
-		Components[0].(*discordgo.ActionsRow).
-		Components[0].(*discordgo.TextInput).Value
-
-	state, err := store.GetPollDraft(h.Redis, userID)
-    if err != nil || state == nil {
-        utils.RespondWithMessage(session, intr, "❌ Session expired. Please start a new poll.", true)
-        return
-    }
-	state.Question = strings.TrimSpace(questionText)
-	store.SavePollDraft(h.Redis, userID, *state)
-
-	embed, components := h.renderDashboard(*state)
-
-	session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
-		Type: discordgo.InteractionResponseUpdateMessage,
-		Data: &discordgo.InteractionResponseData{
-			Embeds:     []*discordgo.MessageEmbed{embed},
-			Components: components,
-		},
-	})
-}
-
-func (h *PollHandler) saveOptionFromModal(session *discordgo.Session, intr *discordgo.InteractionCreate) {
-	userID := intr.Member.User.ID
-	optionText := intr.ModalSubmitData().
-		Components[0].(*discordgo.ActionsRow).
-		Components[0].(*discordgo.TextInput).Value
-
-	state, err := store.GetPollDraft(h.Redis, userID)
-    if err != nil || state == nil {
-        utils.RespondWithMessage(session, intr, "❌ Session expired. Please start a new poll.", true)
-        return
-    }
-
-	if len(state.Options) < 10 {
-		state.Options = append(state.Options, strings.TrimSpace(optionText))
-		store.SavePollDraft(h.Redis, userID, *state)
+		})
+		return
 	}
 
-	embed, components := h.renderDashboard(*state)
+	pollModel := models.Poll{
+		GuildID:   intr.GuildID,
+		ChannelID: intr.ChannelID,
+		CreatorID: userID,
+		Question:  questionText,
+		MessageID: msg.ID,
+		IsActive:  true,
+	}
+	h.DB.Create(&pollModel)
 
-	session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
-		Type: discordgo.InteractionResponseUpdateMessage,
-		Data: &discordgo.InteractionResponseData{
-			Embeds:     []*discordgo.MessageEmbed{embed},
-			Components: components,
-		},
-	})
+	for _, answer := range pollAnswers {
+		h.DB.Create(&models.PollOption{
+			PollID: pollModel.ID,
+			Label:  answer.Media.Text,
+		})
+	}
+
+	receiptMessage := fmt.Sprintf("✅ Poll published! (Poll ID: `%d`)", pollModel.ID)
+    session.ChannelMessageSend(intr.ChannelID, receiptMessage)
+
+    session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
+        Type: discordgo.InteractionResponseChannelMessageWithSource,
+        Data: &discordgo.InteractionResponseData{
+            Content: "Poll created successfully.",
+            Flags:   discordgo.MessageFlagsEphemeral,
+        },
+    })
 }
 
-func (h *PollHandler) renderPollDescription(poll models.Poll) (string, int64) {
-    var totalVotes int64
-    h.DB.Model(&models.PollVote{}).Where("poll_id = ?", poll.ID).Count(&totalVotes)
+func (h *PollHandler) HandlePollAudit(session *discordgo.Session, intr *discordgo.InteractionCreate) {
+	if !utils.IsServerAdmin(intr) {
+		utils.RespondWithMessage(session, intr, "⛔ This command is reserved for Server Admins.", true)
+		return
+	}
 
-    var builder strings.Builder
-    for _, opt := range poll.Options {
-        var optVotes int64
-        h.DB.Model(&models.PollVote{}).Where("option_id = ?", opt.ID).Count(&optVotes)
+	options := intr.ApplicationCommandData().Options
+	pollID := options[0].IntValue()
 
-        percentage := 0.0
-        if totalVotes > 0 {
-            percentage = (float64(optVotes) / float64(totalVotes)) * 100
-        }
+	// 1. Get the Poll from your local DB to find the ChannelID and MessageID
+	var poll models.Poll
+	if err := h.DB.First(&poll, pollID).Error; err != nil {
+		utils.RespondWithMessage(session, intr, "❌ Poll not found in your database. Please check the ID.", true)
+		return
+	}
 
-        barWidth := 15
-        filled := int((percentage / 100) * float64(barWidth))
-        // Show at least one block if there are votes but percentage is low
-        if filled == 0 && optVotes > 0 {
-            filled = 1
-        }
-        bar := strings.Repeat("█", filled) + strings.Repeat("░", barWidth-filled)
+	// 2. Fetch the actual message from Discord
+	msg, err := session.ChannelMessage(poll.ChannelID, poll.MessageID)
+	if err != nil || msg.Poll == nil {
+		utils.RespondWithMessage(session, intr,
+			"❌ Could not find the active native poll on Discord. (It may have been deleted).",
+			true)
+		return
+	}
 
-        // Using %-3.0f ensures the percentage always takes up 3 spaces (alignment)
-        builder.WriteString(fmt.Sprintf("**%s**\n```\n%s  %3.0f%% (%d votes)\n```\n",
-            opt.Label, bar, percentage, optVotes))
-    }
-    return builder.String(), totalVotes
+	var report strings.Builder
+	report.WriteString(fmt.Sprintf("📋 **Audit Report: %s**\n", msg.Poll.Question.Text))
+	report.WriteString(fmt.Sprintf("_Poll ID: %d | Live Data from Discord API_\n\n", poll.ID))
+
+	// 3. Loop through the Native Poll answers
+	for _, answer := range msg.Poll.Answers {
+		report.WriteString(fmt.Sprintf("**%s**\n", answer.Media.Text))
+
+		// Fetch voters directly from Discord API for this specific option
+		// We fetch up to 100 voters. The "" is for pagination (after a specific user ID).
+		voters, err := session.PollAnswerVoters(poll.ChannelID, poll.MessageID, answer.AnswerID)
+
+		if err != nil || len(voters) == 0 {
+			report.WriteString("> _No votes cast for this option._\n\n")
+		} else {
+			for _, voter := range voters {
+				report.WriteString(fmt.Sprintf("> • <@%s>\n", voter.ID))
+			}
+			report.WriteString("\n")
+		}
+	}
+
+	// 4. Send the report back to the admin privately
+	session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseChannelMessageWithSource,
+		Data: &discordgo.InteractionResponseData{
+			Content: report.String(),
+			Flags:   discordgo.MessageFlagsEphemeral,
+		},
+	})
 }

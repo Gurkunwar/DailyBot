@@ -414,17 +414,16 @@ func (h *StandupHandler) finalizeStandup(s *discordgo.Session, state *models.Sta
 	}
 
 	embed := &discordgo.MessageEmbed{
-		Author: &discordgo.MessageEmbedAuthor{
+        Author: &discordgo.MessageEmbedAuthor{
             Name:    fmt.Sprintf("%s's Standup", userName),
             IconURL: avatarURL,
         },
-		Title:       fmt.Sprintf("🚀 %s Update", standup.Name),
-		Description: fmt.Sprintf("Progress report from **%s** (<@%s>)", userName, state.UserID),
-		Color:       0x5865F2,
-		// Color:       0x00ff00,
-		Fields:    fields,
-		Timestamp: time.Now().Format(time.RFC3339),
-	}
+        Title:       fmt.Sprintf("🚀 %s Update", standup.Name),
+        Description: fmt.Sprintf("Progress report from <@%s>", state.UserID),
+        Color:       0x5865F2,
+        Fields:      fields,
+        Timestamp:   time.Now().Format(time.RFC3339),
+    }
 
 	s.ChannelMessageSendComplex(standup.ReportChannelID, &discordgo.MessageSend{
 		Embeds: []*discordgo.MessageEmbed{embed},

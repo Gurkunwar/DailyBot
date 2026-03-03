@@ -181,11 +181,63 @@ var Commands = []*discordgo.ApplicationCommand{
 	},
 	{
 		Name:        "poll",
-		Description: "Launch the interactive Poll Builder dashboard",
+		Description: "📊 Create a native poll for your team instantly.",
+		Options: []*discordgo.ApplicationCommandOption{
+			{
+				Type:        discordgo.ApplicationCommandOptionString,
+				Name:        "question",
+				Description: "What are we voting on?",
+				Required:    true,
+			},
+			{
+				Type:        discordgo.ApplicationCommandOptionString,
+				Name:        "option_1",
+				Description: "First option",
+				Required:    true,
+			},
+			{
+				Type:        discordgo.ApplicationCommandOptionString,
+				Name:        "option_2",
+				Description: "Second option",
+				Required:    true,
+			},
+			{
+				Type:        discordgo.ApplicationCommandOptionString,
+				Name:        "option_3",
+				Description: "Third option (optional)",
+				Required:    false,
+			},
+			{
+				Type:        discordgo.ApplicationCommandOptionString,
+				Name:        "option_4",
+				Description: "Fourth option (optional)",
+				Required:    false,
+			},
+			{
+				Type:        discordgo.ApplicationCommandOptionString,
+				Name:        "option_5",
+				Description: "Fifth option (optional)",
+				Required:    false,
+			},
+			{
+                Type:        discordgo.ApplicationCommandOptionInteger,
+                Name:        "duration",
+                Description: "How long should the poll last? (Default: 24 hours)",
+                Required:    false,
+                Choices: []*discordgo.ApplicationCommandOptionChoice{
+                    {Name: "1 Hour", Value: 1},
+                    {Name: "4 Hours", Value: 4},
+                    {Name: "8 Hours", Value: 8},
+                    {Name: "24 Hours (1 Day)", Value: 24},
+                    {Name: "72 Hours (3 Days)", Value: 72},
+                    {Name: "168 Hours (1 Week)", Value: 168},
+                },
+            },
+		},
 	},
 	{
-		Name:        "poll-audit",
-		Description: "📊 (Admin Only) See a detailed breakdown of who voted for what.",
+		Name:                     "poll-audit",
+		Description:              "📊 (Admin Only) See a detailed breakdown of who voted for what.",
 		DefaultMemberPermissions: &adminPerms,
 		Options: []*discordgo.ApplicationCommandOption{
 			{
@@ -196,4 +248,30 @@ var Commands = []*discordgo.ApplicationCommand{
 			},
 		},
 	},
+	{
+        Name:                     "poll-end",
+        Description:              "🛑 Manually end a live poll early (Admin Only).",
+        DefaultMemberPermissions: &adminPerms,
+        Options: []*discordgo.ApplicationCommandOption{
+            {
+                Type:        discordgo.ApplicationCommandOptionInteger,
+                Name:        "poll-id",
+                Description: "The ID of the poll to end",
+                Required:    true,
+            },
+        },
+    },
+    {
+        Name:                     "poll-export",
+        Description:              "📥 Export poll results to a CSV/Excel file.",
+        DefaultMemberPermissions: &adminPerms,
+        Options: []*discordgo.ApplicationCommandOption{
+            {
+                Type:        discordgo.ApplicationCommandOptionInteger,
+                Name:        "poll-id",
+                Description: "The ID of the poll to export",
+                Required:    true,
+            },
+        },
+    },
 }
