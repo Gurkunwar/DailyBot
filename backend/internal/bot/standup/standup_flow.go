@@ -374,6 +374,14 @@ func (h *StandupHandler) finalizeStandup(s *discordgo.Session, state *models.Sta
 		return
 	}
 
+	discordUser, err := s.User(state.UserID)
+    userName := state.UserID // Fallback to ID
+    avatarURL := ""
+    if err == nil {
+        userName = discordUser.Username
+        avatarURL = discordUser.AvatarURL("")
+    }
+
 	var userProfile models.UserProfile
 	h.DB.Where("user_id = ?", state.UserID).First(&userProfile)
 
@@ -406,8 +414,12 @@ func (h *StandupHandler) finalizeStandup(s *discordgo.Session, state *models.Sta
 	}
 
 	embed := &discordgo.MessageEmbed{
+		Author: &discordgo.MessageEmbedAuthor{
+            Name:    fmt.Sprintf("%s's Standup", userName),
+            IconURL: avatarURL,
+        },
 		Title:       fmt.Sprintf("🚀 %s Update", standup.Name),
-		Description: fmt.Sprintf("Progress report from <@%s>", state.UserID),
+		Description: fmt.Sprintf("Progress report from **%s** (<@%s>)", userName, state.UserID),
 		Color:       0x5865F2,
 		// Color:       0x00ff00,
 		Fields:    fields,
@@ -415,7 +427,6 @@ func (h *StandupHandler) finalizeStandup(s *discordgo.Session, state *models.Sta
 	}
 
 	s.ChannelMessageSendComplex(standup.ReportChannelID, &discordgo.MessageSend{
-		// Content: fmt.Sprintf("🔔 Update from <@%s>", state.UserID),
 		Embeds: []*discordgo.MessageEmbed{embed},
 	})
 }

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/Gurkunwar/dailybot/internal/bot/utils"
 	"github.com/Gurkunwar/dailybot/internal/models"
 	"github.com/Gurkunwar/dailybot/internal/store"
 	"github.com/bwmarrin/discordgo"
@@ -136,8 +137,11 @@ func (h *PollHandler) saveQuestionFromModal(session *discordgo.Session, intr *di
 		Components[0].(*discordgo.ActionsRow).
 		Components[0].(*discordgo.TextInput).Value
 
-	state, _ := store.GetPollDraft(h.Redis, userID)
-
+	state, err := store.GetPollDraft(h.Redis, userID)
+    if err != nil || state == nil {
+        utils.RespondWithMessage(session, intr, "❌ Session expired. Please start a new poll.", true)
+        return
+    }
 	state.Question = strings.TrimSpace(questionText)
 	store.SavePollDraft(h.Redis, userID, *state)
 
@@ -158,7 +162,11 @@ func (h *PollHandler) saveOptionFromModal(session *discordgo.Session, intr *disc
 		Components[0].(*discordgo.ActionsRow).
 		Components[0].(*discordgo.TextInput).Value
 
-	state, _ := store.GetPollDraft(h.Redis, userID)
+	state, err := store.GetPollDraft(h.Redis, userID)
+    if err != nil || state == nil {
+        utils.RespondWithMessage(session, intr, "❌ Session expired. Please start a new poll.", true)
+        return
+    }
 
 	if len(state.Options) < 10 {
 		state.Options = append(state.Options, strings.TrimSpace(optionText))
@@ -174,4 +182,33 @@ func (h *PollHandler) saveOptionFromModal(session *discordgo.Session, intr *disc
 			Components: components,
 		},
 	})
+}
+
+func (h *PollHandler) renderPollDescription(poll models.Poll) (string, int64) {
+    var totalVotes int64
+    h.DB.Model(&models.PollVote{}).Where("poll_id = ?", poll.ID).Count(&totalVotes)
+
+    var builder strings.Builder
+    for _, opt := range poll.Options {
+        var optVotes int64
+        h.DB.Model(&models.PollVote{}).Where("option_id = ?", opt.ID).Count(&optVotes)
+
+        percentage := 0.0
+        if totalVotes > 0 {
+            percentage = (float64(optVotes) / float64(totalVotes)) * 100
+        }
+
+        barWidth := 15
+        filled := int((percentage / 100) * float64(barWidth))
+        // Show at least one block if there are votes but percentage is low
+        if filled == 0 && optVotes > 0 {
+            filled = 1
+        }
+        bar := strings.Repeat("█", filled) + strings.Repeat("░", barWidth-filled)
+
+        // Using %-3.0f ensures the percentage always takes up 3 spaces (alignment)
+        builder.WriteString(fmt.Sprintf("**%s**\n```\n%s  %3.0f%% (%d votes)\n```\n",
+            opt.Label, bar, percentage, optVotes))
+    }
+    return builder.String(), totalVotes
 }

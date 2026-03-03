@@ -11,25 +11,27 @@ import (
 )
 
 func (h *BotHanlder) handleHelp(session *discordgo.Session, intr *discordgo.InteractionCreate) {
-    helpText := "💡 **DailyBot Help Menu**\n\n" +
-        "**👤 User Commands**\n" +
-        "`/start` - Manually trigger your daily standup form.\n" +
-        "`/history` - View your past standup reports.\n" +
-        "`/timezone` - Set your local timezone so reminders trigger at your morning.\n" +
-        "`/poll` - 📊 Create an interactive poll for your team.\n" +
-        "`/delete-my-data` - Permanently delete your profile and leave all standups.\n" +
-        "> *💡 Tip: When you receive your automated DM, you can use the **Skip Today** button if you are out of office!*\n\n" +
-        "**🛠️ Manager Commands (Admin Only)**\n" +
-        "`/create-standup` - Create a new team standup.\n" +
-        "`/standup-info` - 📊 View all settings, members, and questions for a standup.\n" +
-        "`/edit-standup` - **[Dashboard]** Edit Questions, Active Days, Trigger Time, and Report Channel.\n" +
-        "`/add-member` - Add a user to an existing standup.\n" +
-        "`/remove-member` - Remove a user from an existing standup.\n" +
-        "`/delete-standup` - Permanently delete an existing standup team.\n\n" +
-        "ℹ️ *Note: I will automatically ping your team members at their local time on your selected active days!*"
+	helpText := "💡 **DailyBot Help Menu**\n\n" +
+		"**👤 User Commands**\n" +
+		"`/start` - Manually trigger your daily standup form.\n" +
+		"`/history` - View your past standup reports.\n" +
+		"`/timezone` - Set your local timezone so reminders trigger at your morning.\n" +
+		"`/poll` - 📊 Create an interactive poll for your team.\n" +
+		"`/delete-my-data` - Permanently delete your profile and leave all standups.\n" +
+		"> *💡 Tip: When you receive your automated DM, you can use the **Skip Today** button if you are out of office!*\n\n" +
+		"**🛠️ Manager Commands (Admin Only)**\n" +
+		"`/create-standup` - Create a new team standup.\n" +
+		"`/standup-info` - 📊 View all settings, members, and questions for a standup.\n" +
+		"`/edit-standup` - **[Dashboard]** Edit Questions, Active Days, Trigger Time, and Report Channel.\n" +
+		"`/poll-audit` - 🔍 View a detailed list of who voted for what in a specific poll.\n" +
+		"`/add-member` - Add a user to an existing standup.\n" +
+		"`/remove-member` - Remove a user from an existing standup.\n" +
+		"`/delete-standup` - Permanently delete an existing standup team.\n\n" +
+		"ℹ️ *Note: I will automatically ping your team members at their local time on your selected active days!*"
 
-    utils.RespondWithMessage(session, intr, helpText, true)
+	utils.RespondWithMessage(session, intr, helpText, true)
 }
+
 func (h *BotHanlder) handleDeleteMyData(session *discordgo.Session, intr *discordgo.InteractionCreate) {
 	userID := utils.ExtractUserID(intr)
 
