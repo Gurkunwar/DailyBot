@@ -12,7 +12,7 @@ import (
 type UserGuild struct {
 	ID          string `json:"id"`
 	Name        string `json:"name"`
-	Permissions string `json:"permissions"`
+	Permissions interface{} `json:"permissions"`
 	Owner       bool   `json:"owner"`
 }
 
@@ -50,7 +50,7 @@ func (s *Server) HandleGetUserGuilds(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	req, _ := http.NewRequest("GET", "https://discord.com/api/users/@me/guilds", nil)
+	req, _ := http.NewRequest("GET", "https://discord.com/api/v10/users/@me/guilds", nil)
 	req.Header.Set("Authorization", "Bearer "+user.DiscordToken)
 
 	client := &http.Client{}
@@ -72,10 +72,17 @@ func (s *Server) HandleGetUserGuilds(w http.ResponseWriter, r *http.Request) {
 	}
 
 	for _, g := range userGuilds {
-		perms, _ := strconv.ParseInt(g.Permissions, 10, 64)
+		var perms uint64
+        
+		switch v := g.Permissions.(type) {
+		case string:
+			perms, _ = strconv.ParseUint(v, 10, 64)
+		case float64:
+			perms = uint64(v)
+		}
 
-		hasAdmin := (perms & 0x8) == 0x8
-		hasManageServer := (perms & 0x20) == 0x20
+		hasAdmin := (perms & discordgo.PermissionAdministrator) == discordgo.PermissionAdministrator
+		hasManageServer := (perms & discordgo.PermissionManageGuild) == discordgo.PermissionManageServer
 
 		if g.Owner || hasAdmin || hasManageServer {
 			responseList = append(responseList, GuildDTO{

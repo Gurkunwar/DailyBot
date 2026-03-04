@@ -11,6 +11,7 @@ import {
   useGetGuildChannelsQuery,
   useToggleMemberMutation,
   useUpdateStandupMutation,
+  useDeleteStandupMutation,
 } from "../store/apiSlice";
 
 export default function ManageStandup() {
@@ -33,6 +34,7 @@ export default function ManageStandup() {
   const [toggleMemberMutation] = useToggleMemberMutation();
   const [updateStandupMutation, { isLoading: isSaving }] =
     useUpdateStandupMutation();
+  const [deleteStandupMutation] = useDeleteStandupMutation();
 
   const toggleMember = async (userId, isCurrentlyMember) => {
     try {
@@ -57,6 +59,16 @@ export default function ManageStandup() {
     } catch (err) {
       console.error("Failed to update standup", err);
       alert("Failed to save settings.");
+    }
+  };
+
+  const deleteStandup = async () => {
+    try {
+      await deleteStandupMutation(id).unwrap();
+      navigate("/standups");
+    } catch (err) {
+      console.error("Failed to delete standup", err);
+      alert("Failed to delete standup.");
     }
   };
 
@@ -122,6 +134,7 @@ export default function ManageStandup() {
                 standup={standup}
                 channels={channels}
                 onSave={updateStandup}
+                onDelete={deleteStandup}
                 isSaving={isSaving}
               />
             )}

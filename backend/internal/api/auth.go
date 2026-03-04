@@ -77,11 +77,9 @@ func HandleDiscordLogin(db *gorm.DB) http.HandlerFunc {
 		json.NewDecoder(userResp.Body).Decode(&discordUser)
 
 		var user models.UserProfile
-		err = db.Where(models.UserProfile{
-			UserID:   discordUser.ID,
-			Username: discordUser.Username,
-			Avatar:   discordUser.Avatar,
-		}).Assign(models.UserProfile{
+		err = db.Where("user_id = ?", discordUser.ID).Assign(models.UserProfile{
+			Username:     discordUser.Username,
+			Avatar:       discordUser.Avatar,
 			DiscordToken: tokenRes.AccessToken,
 		}).FirstOrCreate(&user).Error
 

@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"time"
 
@@ -70,19 +71,38 @@ func (s *Server) HandleCreateStandup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var standup models.Standup
-	if err := json.NewDecoder(r.Body).Decode(&standup); err != nil {
+	var payload struct {
+		Name            string   `json:"name"`
+		Time            string   `json:"time"`
+		Days            string   `json:"days"`
+		GuildID         string   `json:"guild_id"`
+		ReportChannelID string   `json:"report_channel_id"`
+		Questions       []string `json:"questions"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 		http.Error(w, "Invalid request payload", http.StatusBadRequest)
 		return
 	}
 
 	managerID := r.Context().Value(UserIDKey).(string)
-	standup.ManagerID = managerID
+
+	standup := models.Standup{
+		Name:            payload.Name,
+		Time:            payload.Time,
+		Days:            payload.Days,
+		GuildID:         payload.GuildID,
+		ReportChannelID: payload.ReportChannelID,
+		ManagerID:       managerID,
+		Questions:       payload.Questions,
+	}
 
 	if err := s.StandupService.CreateStandup(standup); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+
+	s.DB.Where("guild_id = ? AND name = ?", standup.GuildID, standup.Name).First(&standup)
 
 	s.StandupService.AddMemberToStandup(managerID, standup.ID)
 
@@ -102,6 +122,7 @@ func (s *Server) HandleUpdateStandup(w http.ResponseWriter, r *http.Request) {
 		ID              uint     `json:"id"`
 		Name            string   `json:"name"`
 		Time            string   `json:"time"`
+		Days            string   `json:"days"`
 		ReportChannelID string   `json:"report_channel_id"`
 		Questions       []string `json:"questions"`
 	}
@@ -121,6 +142,7 @@ func (s *Server) HandleUpdateStandup(w http.ResponseWriter, r *http.Request) {
 
 	standup.Name = payload.Name
 	standup.Time = payload.Time
+	standup.Days = payload.Days
 	standup.ReportChannelID = payload.ReportChannelID
 	standup.Questions = payload.Questions
 
@@ -132,6 +154,41 @@ func (s *Server) HandleUpdateStandup(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{
 		"message": "Standup updated successfully!",
+	})
+}
+
+func (s *Server) HandleDeleteStandup(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodDelete {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	standupID := r.URL.Query().Get("id")
+	if standupID == "" {
+		http.Error(w, "Missing id", http.StatusBadRequest)
+		return
+	}
+
+	managerID := r.Context().Value(UserIDKey).(string)
+
+	var standup models.Standup
+	if err := s.DB.Where("id = ? AND manager_id = ?", standupID, managerID).First(&standup).Error; err != nil {
+		http.Error(w, "Standup not found or unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	if err := s.DB.Model(&standup).Association("Participants").Clear(); err != nil {
+		log.Println("Error clearing standup participants during deletion:", err)
+	}
+
+	if err := s.DB.Unscoped().Delete(&standup).Error; err != nil {
+		http.Error(w, "Failed to delete standup", http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{
+		"message": "Standup deleted successfully!",
 	})
 }
 

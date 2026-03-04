@@ -6,6 +6,7 @@ import { useNavigate } from "react-router-dom";
 export default function MyStandups() {
   const [standups, setStandups] = useState([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [selectedGuild, setSelectedGuild] = useState("All");
   const token = localStorage.getItem("token");
   const navigate = useNavigate();
 
@@ -28,6 +29,13 @@ export default function MyStandups() {
     fetchStandups();
   }, [fetchStandups]);
 
+  const uniqueGuilds = ["All", ...new Set(standups.map((s) => s.guild_name))];
+
+  const filteredStandups =
+    selectedGuild === "All"
+      ? standups
+      : standups.filter((s) => s.guild_name === selectedGuild);
+
   return (
     <div className="flex h-screen bg-[#313338] text-white overflow-hidden font-sans">
       <Sidebar />
@@ -39,17 +47,39 @@ export default function MyStandups() {
         <div className="flex-1 overflow-y-auto p-8 relative">
           <div className="flex justify-between items-center mb-8">
             <h2 className="text-2xl font-bold">Managed Standups</h2>
-            <button
-              onClick={() => setIsModalOpen(true)}
-              className="bg-[#5865F2] hover:bg-[#4752C4] px-4 py-2 rounded font-semibold text-sm 
-            transition-colors cursor-pointer"
-            >
-              + New Standup
-            </button>
+            
+            {/* 4. Added the filter dropdown UI next to the button */}
+            <div className="flex items-center gap-4">
+              {standups.length > 0 && (
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-bold text-[#99AAB5]">Filter:</span>
+                  <select
+                    value={selectedGuild}
+                    onChange={(e) => setSelectedGuild(e.target.value)}
+                    className="bg-[#1e1f22] text-sm text-white px-3 py-2 rounded-md outline-none border border-transparent focus:border-[#5865F2] cursor-pointer"
+                  >
+                    {uniqueGuilds.map((guild) => (
+                      <option key={guild} value={guild}>
+                        {guild === "All" ? "All Servers" : guild}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              <button
+                onClick={() => setIsModalOpen(true)}
+                className="bg-[#5865F2] hover:bg-[#4752C4] px-4 py-2 rounded font-semibold text-sm 
+              transition-colors cursor-pointer"
+              >
+                + New Standup
+              </button>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {standups.map((s) => (
+            {/* 5. Map over filteredStandups instead of the raw standups array */}
+            {filteredStandups.map((s) => (
               <div
                 key={s.id}
                 onClick={() => navigate(`/standups/${s.id}`)}
@@ -86,6 +116,8 @@ export default function MyStandups() {
                 </div>
               </div>
             ))}
+            
+            {/* Display empty states conditionally */}
             {standups.length === 0 && (
               <div
                 className="col-span-full py-20 text-center bg-[#2b2d31] rounded-xl border-2 border-dashed 
@@ -95,6 +127,17 @@ export default function MyStandups() {
                   No standups found. Create your first one to get started!
                 </p>
               </div>
+            )}
+
+            {standups.length > 0 && filteredStandups.length === 0 && (
+               <div
+               className="col-span-full py-20 text-center bg-[#2b2d31] rounded-xl border-2 border-dashed 
+             border-[#404249]"
+             >
+               <p className="text-[#99AAB5]">
+                 No standups found in this server.
+               </p>
+             </div>
             )}
           </div>
         </div>

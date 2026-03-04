@@ -67,6 +67,13 @@ export const asyncFlowApi = createApi({
         { type: "Standup", id: arg.id },
       ],
     }),
+    deleteStandup: builder.mutation({
+      query: (id) => ({
+        url: `standups/delete?id=${id}`,
+        method: "DELETE",
+      }),
+      invalidatesTags: ["ManagedStandups"],
+    }),
   }),
 });
 
@@ -80,4 +87,5 @@ export const {
   useCreateStandupMutation,
   useToggleMemberMutation,
   useUpdateStandupMutation,
+  useDeleteStandupMutation,
 } = asyncFlowApi;
