@@ -8,6 +8,8 @@ import Home from "./pages/Home";
 import ProtectedRoute from "./components/ProtectedRoute";
 import MyStandups from "./pages/MyStandups";
 import ManageStandup from "./pages/ManageStandup";
+import MyPolls from "./pages/MyPolls";
+import ManagePoll from "./pages/ManagePoll";
 
 function App() {
   return (
@@ -33,6 +35,8 @@ function App() {
           }
         />
         <Route path="/standups/:id" element={<ManageStandup />} />
+        <Route path="/polls" element={<MyPolls />} />
+        <Route path="/polls/:id" element={<ManagePoll />} />
       </Routes>
     </Router>
   );

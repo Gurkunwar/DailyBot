@@ -47,6 +47,10 @@ export default function Sidebar() {
         <nav className="p-3 space-y-1 mt-2">
           <NavItem to="/dashboard" icon="📊" label="Overview" />
           <NavItem to="/standups" icon="👥" label="My Standups" />
+          
+          {/* NEW POLLS LINK ADDED HERE */}
+          <NavItem to="/polls" icon="🗳️" label="Polls" /> 
+          
           <NavItem to="/history" icon="📜" label="History" />
           <NavItem to="/settings" icon="⚙️" label="Settings" />
         </nav>

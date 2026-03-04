@@ -12,7 +12,14 @@ export const asyncFlowApi = createApi({
       return headers;
     },
   }),
-  tagTypes: ["Standup", "Members", "History", "Managed Standups"],
+  tagTypes: [
+    "Standup",
+    "Members",
+    "History",
+    "Managed Standups",
+    "ManagedPolls",
+    "Poll",
+  ],
   endpoints: (builder) => ({
     getStandupById: builder.query({
       query: (id) => `standups/get?id=${id}`,
@@ -37,7 +44,7 @@ export const asyncFlowApi = createApi({
       query: () => "user-guilds",
     }),
     getDashboardStats: builder.query({
-      query: () => 'dashboard/stats',
+      query: () => "dashboard/stats",
     }),
     toggleMember: builder.mutation({
       query: ({ standupId, userId, isCurrentlyMember }) => ({
@@ -74,6 +81,31 @@ export const asyncFlowApi = createApi({
       }),
       invalidatesTags: ["ManagedStandups"],
     }),
+
+    getManagedPolls: builder.query({
+      query: () => "managed-polls",
+      providesTags: ["ManagedPolls"],
+    }),
+    getPollById: builder.query({
+      query: (id) => `polls/get?id=${id}`,
+      providesTags: (result, error, id) => [{ type: "Poll", id }],
+    }),
+    createPoll: builder.mutation({
+      query: (payload) => ({
+        url: `polls/create`,
+        method: "POST",
+        body: payload,
+      }),
+      invalidatesTags: ["ManagedPolls"],
+    }),
+    endPoll: builder.mutation({
+      query: (pollId) => ({
+        url: `polls/end`,
+        method: "POST",
+        body: { poll_id: parseInt(pollId) },
+      }),
+      invalidatesTags: (result, error, arg) => [{ type: "Poll", id: arg }, "ManagedPolls"],
+    }),
   }),
 });
 
@@ -88,4 +120,9 @@ export const {
   useToggleMemberMutation,
   useUpdateStandupMutation,
   useDeleteStandupMutation,
+
+  useGetManagedPollsQuery,
+  useGetPollByIdQuery,
+  useCreatePollMutation,
+  useEndPollMutation,
 } = asyncFlowApi;

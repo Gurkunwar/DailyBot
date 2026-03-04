@@ -34,6 +34,12 @@ func (s *Server) Routes() {
 	http.HandleFunc("/api/standups/remove-member", AuthMiddleware(s.HandleRemoveStandupMember))
 	http.HandleFunc("/api/standups/get", AuthMiddleware(s.HandleGetStandup))
 	http.HandleFunc("/api/standups/history", AuthMiddleware(s.HandleGetStandupHistory))
+
+	http.HandleFunc("/api/managed-polls", AuthMiddleware(s.HandleGetManagedPolls))
+	http.HandleFunc("/api/polls/get", AuthMiddleware(s.HandleGetPoll))
+	http.HandleFunc("/api/polls/create", AuthMiddleware(s.HandleCreateWebPoll))
+	http.HandleFunc("/api/polls/end", AuthMiddleware(s.HandleEndWebPoll))
+	http.HandleFunc("/api/polls/export", AuthMiddleware(s.HandleExportWebPoll))
 }
 
 func (s *Server) Start(port string) {
