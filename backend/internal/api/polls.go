@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/Gurkunwar/asyncflow/internal/api/dtos"
@@ -12,66 +14,89 @@ import (
 	"github.com/bwmarrin/discordgo"
 )
 
+// Make sure you import "strconv" and "math" at the top of your file!
+
 func (s *Server) HandleGetManagedPolls(w http.ResponseWriter, r *http.Request) {
     managerID := r.Context().Value(UserIDKey).(string)
     onlyMe := r.URL.Query().Get("filter") == "me"
 
+    // 1. Pagination Setup
+    page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+    if page < 1 { page = 1 }
+    limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+    if limit <= 0 { limit = 12 } // 12 fits nicely in a 3-column grid
+
+    offset := (page - 1) * limit
+
+	searchQuery := r.URL.Query().Get("search")
+
+    // 2. Build Admin Guilds List for strict DB filtering
+    var adminGuildIDs []string
+    userGuilds, err := s.Session.UserGuilds(100, "", "", false)
+    if err == nil {
+        for _, g := range userGuilds {
+            // Check if user has admin/management rights
+            if g.Owner || g.Permissions&discordgo.PermissionAdministrator != 0 || g.Permissions&discordgo.PermissionManageServer != 0 {
+                adminGuildIDs = append(adminGuildIDs, g.ID)
+            }
+        }
+    }
+
     var allPolls []models.Poll
-    if err := s.DB.Order("id desc").Find(&allPolls).Error; err != nil {
+    var totalCount int64
+
+    // 3. Construct GORM Query
+    query := s.DB.Model(&models.Poll{}).Order("id desc")
+    
+    if onlyMe {
+        query = query.Where("creator_id = ?", managerID)
+    } else {
+        if len(adminGuildIDs) > 0 {
+            // Can see polls they created OR polls in servers they manage
+            query = query.Where("creator_id = ? OR guild_id IN ?", managerID, adminGuildIDs)
+        } else {
+            query = query.Where("creator_id = ?", managerID)
+        }
+    }
+
+	if searchQuery != "" {
+        query = query.Where("question ILIKE ?", "%"+searchQuery+"%")
+    }
+
+    // 4. Count total before applying offset/limit
+    query.Count(&totalCount)
+
+    // 5. Apply pagination limit and fetch
+    if err := query.Offset(offset).Limit(limit).Find(&allPolls).Error; err != nil {
         http.Error(w, "Database error", http.StatusInternalServerError)
         return
     }
 
     var response []dtos.PollDTO
     for _, p := range allPolls {
-        isCreator := p.CreatorID == managerID
-        
-        if onlyMe && !isCreator {
-            continue
-        }
-
-        isAdmin := false
-        if !isCreator {
-            member, err := s.Session.State.Member(p.GuildID, managerID)
-            if err != nil {
-                member, _ = s.Session.GuildMember(p.GuildID, managerID)
-            }
-
-            if member != nil {
-                guild, _ := s.Session.State.Guild(p.GuildID)
-                if guild == nil {
-                    guild, _ = s.Session.Guild(p.GuildID)
-                }
-                
-                if guild != nil && guild.OwnerID == managerID {
-                    isAdmin = true
-                } else {
-                    permissions, _ := s.Session.UserChannelPermissions(managerID, p.ChannelID)
-                    if permissions&discordgo.PermissionAdministrator != 0 || permissions&discordgo.PermissionManageServer != 0 {
-                        isAdmin = true
-                    }
-                }
-            }
-        }
-
-        if isCreator || isAdmin {
-            gName, cName := s.GetDiscordMetadata(p.GuildID, p.ChannelID)
-            response = append(response, dtos.PollDTO{
-                ID:          p.ID,
-                Question:    p.Question,
-                GuildName:   gName,
-                ChannelName: cName,
-                IsActive:    p.IsActive,
-            })
-        }
+        gName, cName := s.GetDiscordMetadata(p.GuildID, p.ChannelID)
+        response = append(response, dtos.PollDTO{
+            ID:          p.ID,
+            Question:    p.Question,
+            GuildName:   gName,
+            ChannelName: cName,
+            IsActive:    p.IsActive,
+        })
     }
+    if response == nil { response = []dtos.PollDTO{} }
 
-    if response == nil {
-        response = []dtos.PollDTO{}
+    totalPages := int(math.Ceil(float64(totalCount) / float64(limit)))
+
+    // 6. Return standard pagination payload
+    resPayload := map[string]interface{}{
+        "data":        response,
+        "total_count": totalCount,
+        "page":        page,
+        "total_pages": totalPages,
     }
 
     w.Header().Set("Content-Type", "application/json")
-    json.NewEncoder(w).Encode(response)
+    json.NewEncoder(w).Encode(resPayload)
 }
 
 func (s *Server) HandleGetPoll(w http.ResponseWriter, r *http.Request) {
@@ -110,7 +135,7 @@ func (s *Server) HandleGetPoll(w http.ResponseWriter, r *http.Request) {
 				})
 			}
 		}
-		
+
 		poll.Votes = liveVotes
 	}
 
@@ -187,6 +212,35 @@ func (s *Server) HandleCreateWebPoll(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(map[string]string{"message": "Poll published successfully!"})
+}
+
+func (s *Server) HandleDeleteWebPoll(w http.ResponseWriter, r *http.Request) {
+    if r.Method != http.MethodDelete {
+        http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+        return
+    }
+
+    pollID := r.URL.Query().Get("id")
+    if pollID == "" {
+        http.Error(w, "Missing poll id", http.StatusBadRequest)
+        return
+    }
+
+    managerID := r.Context().Value(UserIDKey).(string)
+    result := s.DB.Where("id = ? AND creator_id = ?", pollID, managerID).Delete(&models.Poll{})
+    
+    if result.Error != nil {
+        http.Error(w, "Database error", http.StatusInternalServerError)
+        return
+    }
+    
+    if result.RowsAffected == 0 {
+        http.Error(w, "Poll not found or unauthorized", http.StatusUnauthorized)
+        return
+    }
+
+    w.WriteHeader(http.StatusOK)
+    json.NewEncoder(w).Encode(map[string]string{"message": "Poll deleted successfully"})
 }
 
 func (s *Server) HandleEndWebPoll(w http.ResponseWriter, r *http.Request) {
@@ -270,6 +324,6 @@ func (s *Server) HandleExportWebPoll(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "text/csv")
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=poll_%s_results.csv", pollID))
-	
+
 	w.Write([]byte(csvBuilder.String()))
 }

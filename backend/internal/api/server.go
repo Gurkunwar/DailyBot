@@ -40,6 +40,7 @@ func (s *Server) Routes() {
 	http.HandleFunc("/api/managed-polls", AuthMiddleware(s.HandleGetManagedPolls))
 	http.HandleFunc("/api/polls/get", AuthMiddleware(s.HandleGetPoll))
 	http.HandleFunc("/api/polls/create", AuthMiddleware(s.HandleCreateWebPoll))
+	http.HandleFunc("/api/polls/delete", AuthMiddleware(s.HandleDeleteWebPoll))
 	http.HandleFunc("/api/polls/end", AuthMiddleware(s.HandleEndWebPoll))
 	http.HandleFunc("/api/polls/export", AuthMiddleware(s.HandleExportWebPoll))
 }

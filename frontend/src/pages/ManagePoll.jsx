@@ -5,6 +5,7 @@ import {
   useGetPollByIdQuery,
   useGetGuildMembersQuery,
   useEndPollMutation,
+  useDeletePollMutation,
 } from "../store/apiSlice";
 
 const CHART_COLORS = [
@@ -34,6 +35,7 @@ export default function ManagePoll() {
   );
 
   const [endPollMutation, { isLoading: isEnding }] = useEndPollMutation();
+  const [deletePoll, { isLoading: isDeleting }] = useDeletePollMutation();
 
   const handleEndPoll = async () => {
     if (
@@ -46,6 +48,22 @@ export default function ManagePoll() {
         alert("Poll successfully ended!");
       } catch (err) {
         console.error("Failed to end poll", err);
+      }
+    }
+  };
+
+  const handleDelete = async () => {
+    if (
+      window.confirm(
+        "🚨 Are you sure you want to permanently delete this poll? This cannot be undone.",
+      )
+    ) {
+      try {
+        await deletePoll(id).unwrap();
+        navigate("/polls"); // Redirect back to the dashboard after deletion
+      } catch (err) {
+        console.error("Failed to delete poll", err);
+        alert("Failed to delete the poll.");
       }
     }
   };
@@ -135,6 +153,10 @@ export default function ManagePoll() {
             <img
               key={u.id}
               src={u.avatar || "https://cdn.discordapp.com/embed/avatars/0.png"}
+              onError={(e) => {
+                e.target.onerror = null;
+                e.target.src = "https://cdn.discordapp.com/embed/avatars/0.png";
+              }}
               alt={u.username}
               title={u.username}
               className="w-8 h-8 rounded-full border-2 border-[#2b2d31] bg-[#1e1f22]"
@@ -209,6 +231,13 @@ export default function ManagePoll() {
                 {isEnding ? "Ending..." : "End Poll Early"}
               </button>
             )}
+            <button
+              onClick={handleDelete}
+              disabled={isDeleting}
+              className="px-4 py-2 rounded-md text-sm font-semibold border border-[#da373c]/30 text-[#da373c] hover:bg-[#da373c] hover:text-white transition-all shadow-sm"
+            >
+              {isDeleting ? "Deleting..." : "Delete Poll"}
+            </button>
           </div>
         </div>
 
@@ -405,7 +434,15 @@ export default function ManagePoll() {
                 border border-[#1e1f22] shadow-sm"
                 >
                   <img
-                    src={u.avatar}
+                    src={
+                      u.avatar ||
+                      "https://cdn.discordapp.com/embed/avatars/0.png"
+                    }
+                    onError={(e) => {
+                      e.target.onerror = null;
+                      e.target.src =
+                        "https://cdn.discordapp.com/embed/avatars/0.png";
+                    }}
                     alt="avatar"
                     className="w-10 h-10 rounded-full bg-[#1e1f22]"
                   />

@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math"
 	"net/http"
+	"strconv"
 
 	"github.com/Gurkunwar/asyncflow/internal/api/dtos"
 	"github.com/Gurkunwar/asyncflow/internal/models"
@@ -16,61 +18,88 @@ func (s *Server) HandleGetManagedStandups(dg *discordgo.Session) http.HandlerFun
 		managerID := r.Context().Value(UserIDKey).(string)
 		onlyMe := r.URL.Query().Get("filter") == "me"
 
+		// 1. Pagination & Search Setup
+		page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+		if page < 1 {
+			page = 1
+		}
+		limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+		if limit <= 0 {
+			limit = 12
+		}
+		offset := (page - 1) * limit
+
+		searchQuery := r.URL.Query().Get("search")
+
+		// 2. Pre-fetch Admin Guilds for optimization (Stops N+1 Discord API limits)
+		var adminGuildIDs []string
+		userGuilds, err := dg.UserGuilds(100, "", "", false)
+		if err == nil {
+			for _, g := range userGuilds {
+				if g.Owner ||
+					g.Permissions&discordgo.PermissionAdministrator != 0 ||
+					g.Permissions&discordgo.PermissionManageGuild != 0 {
+					adminGuildIDs = append(adminGuildIDs, g.ID)
+				}
+			}
+		}
+
+		// 3. Construct Query
+		query := s.DB.Model(&models.Standup{}).Order("id desc")
+
+		if onlyMe {
+			query = query.Where("manager_id = ?", managerID)
+		} else {
+			if len(adminGuildIDs) > 0 {
+				query = query.Where("manager_id = ? OR guild_id IN ?", managerID, adminGuildIDs)
+			} else {
+				query = query.Where("manager_id = ?", managerID)
+			}
+		}
+
+		// Apply Search Filter
+		if searchQuery != "" {
+			query = query.Where("name ILIKE ?", "%"+searchQuery+"%")
+		}
+
+		// 4. Count and Fetch
+		var totalCount int64
+		query.Count(&totalCount)
+
 		var allStandups []models.Standup
-		if err := s.DB.Order("id desc").Find(&allStandups).Error; err != nil {
+		if err := query.Offset(offset).Limit(limit).Find(&allStandups).Error; err != nil {
 			http.Error(w, "Database error", http.StatusInternalServerError)
 			return
 		}
 
+		// 5. Map to Response DTO
 		var response []dtos.StandupDTO
-
 		for _, st := range allStandups {
-			isManager := st.ManagerID == managerID
-			
-			if onlyMe && !isManager {
-				continue
-			}
+			// Re-using your optimized GetDiscordMetadata helper!
+			gName, cName := s.GetDiscordMetadata(st.GuildID, st.ReportChannelID)
 
-			hasAccess := isManager
-			if !hasAccess {
-				p, err := s.Session.UserChannelPermissions(managerID, st.ReportChannelID)
-				if err == nil && (p&discordgo.PermissionAdministrator != 0 || p&discordgo.PermissionManageServer != 0) {
-					hasAccess = true
-				}
-			}
-
-			if hasAccess {
-				gName := "Unknown Server"
-				guild, err := dg.State.Guild(st.GuildID)
-				if err != nil {
-					guild, _ = dg.Guild(st.GuildID)
-				}
-				if guild != nil {
-					gName = guild.Name
-				}
-
-				cName := "unknown-channel"
-				channel, err := dg.State.Channel(st.ReportChannelID)
-				if err != nil {
-					channel, _ = dg.Channel(st.ReportChannelID)
-				}
-				if channel != nil {
-					cName = channel.Name
-				}
-
-				response = append(response, dtos.StandupDTO{
-					ID:              st.ID,
-					Name:            st.Name,
-					Time:            st.Time,
-					GuildName:       gName,
-					ChannelName:     cName,
-					ReportChannelID: st.ReportChannelID,
-				})
-			}
+			response = append(response, dtos.StandupDTO{
+				ID:              st.ID,
+				Name:            st.Name,
+				Time:            st.Time,
+				GuildName:       gName,
+				ChannelName:     cName,
+				ReportChannelID: st.ReportChannelID,
+			})
 		}
 
+		if response == nil {
+			response = []dtos.StandupDTO{}
+		}
+		totalPages := int(math.Ceil(float64(totalCount) / float64(limit)))
+
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(response)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"data":        response,
+			"total_count": totalCount,
+			"page":        page,
+			"total_pages": totalPages,
+		})
 	}
 }
 
