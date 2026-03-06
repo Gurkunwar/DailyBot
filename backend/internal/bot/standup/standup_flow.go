@@ -253,6 +253,14 @@ func (h *StandupHandler) handleSkipStandup(session *discordgo.Session,
 		return
 	}
 
+	discordUser, err := session.User(userID)
+	userName := userID 
+	avatarURL := ""
+	if err == nil {
+		userName = discordUser.Username
+		avatarURL = discordUser.AvatarURL("")
+	}
+
 	var userProfile models.UserProfile
 	h.DB.Where("user_id = ?", userID).First(&userProfile)
 
@@ -267,6 +275,10 @@ func (h *StandupHandler) handleSkipStandup(session *discordgo.Session,
 	h.DB.Create(&history)
 
 	embed := &discordgo.MessageEmbed{
+		Author: &discordgo.MessageEmbedAuthor{
+			Name:    fmt.Sprintf("%s's Standup", userName),
+			IconURL: avatarURL,
+		},
 		Title:       fmt.Sprintf("⏭️ %s Update (Skipped)", standup.Name),
 		Description: fmt.Sprintf("<@%s> skipped their standup today.", userID),
 		Color:       0x808080,
@@ -274,7 +286,8 @@ func (h *StandupHandler) handleSkipStandup(session *discordgo.Session,
 	}
 
 	session.ChannelMessageSendComplex(standup.ReportChannelID, &discordgo.MessageSend{
-		Embeds: []*discordgo.MessageEmbed{embed},
+		Content: fmt.Sprintf("<@%s>", userID), 
+		Embeds:  []*discordgo.MessageEmbed{embed},
 	})
 
 	utils.UpdateMessage(session, intr,

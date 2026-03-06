@@ -20,6 +20,8 @@ func NewServer(db *gorm.DB, session *discordgo.Session, standupService *services
 }
 
 func (s *Server) Routes() {
+	http.HandleFunc("/", s.handleRoot)
+
 	http.HandleFunc("/api/auth/discord", HandleDiscordLogin(s.DB))
 	http.HandleFunc("/api/managed-standups", AuthMiddleware(s.HandleGetManagedStandups(s.Session)))
 
@@ -64,4 +66,15 @@ func (s *Server) GetDiscordMetadata(guildID, channelID string) (string, string) 
 		cName = channel.Name
 	}
 	return gName, cName
+}
+
+func (s *Server) handleRoot(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path != "/" {
+        http.NotFound(w, r)
+        return
+    }
+
+	w.Header().Set("Content-Type", "application/json")
+    w.WriteHeader(http.StatusOK)
+    w.Write([]byte(`{"status": "online", "message": "DailyBot API is running gracefully"}`))
 }
