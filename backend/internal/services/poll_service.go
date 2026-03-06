@@ -20,9 +20,18 @@ func NewPollService(db *gorm.DB, session *discordgo.Session) *PollService {
 	return &PollService{DB: db, Session: session}
 }
 
-func (s *PollService) CreatePoll(guildID, channelID, creatorID, question string, options []string, duration int) (*models.Poll, error) {
-	var pollAnswers []discordgo.PollAnswer
+func (s *PollService) CreatePoll(guildID, channelID, creatorID,
+	question string, options []string, duration int) (*models.Poll, error) {
 
+	if err := s.DB.FirstOrCreate(&models.Guild{}, models.Guild{GuildID: guildID}).Error; err != nil {
+		return nil, fmt.Errorf("failed to register guild in database: %v", err)
+	}
+
+	if err := s.DB.FirstOrCreate(&models.UserProfile{}, models.UserProfile{UserID: creatorID}).Error; err != nil {
+		return nil, fmt.Errorf("failed to register creator in database: %v", err)
+	}
+
+	var pollAnswers []discordgo.PollAnswer
 	for _, optText := range options {
 		cleanOpt := strings.TrimSpace(optText)
 		if cleanOpt == "" {

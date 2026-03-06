@@ -46,7 +46,7 @@ func (s *Server) HandleGetManagedPolls(w http.ResponseWriter, r *http.Request) {
         query = query.Where("guild_id = ?", guildFilter)
         
         if onlyMe {
-            query = query.Where("creator_id = ?", managerID)
+            query = query.Where(&models.Poll{CreatorID: managerID})
         } else {
             isAdminOfSelected := false
             for _, id := range adminGuildIDs {
@@ -57,7 +57,7 @@ func (s *Server) HandleGetManagedPolls(w http.ResponseWriter, r *http.Request) {
             }
             
             if !isAdminOfSelected {
-                query = query.Where("creator_id = ?", managerID)
+                query = query.Where(&models.Poll{CreatorID: managerID})
             }
         }
     } else {

@@ -18,15 +18,26 @@ type StandupService struct {
 	TriggerFunc func(s *discordgo.Session, userID, guildID, channelID string, standupID uint)
 }
 
-func (s *StandupService) CreateStandup(input models.Standup) error {
-	if input.Name == "" {
-		return errors.New("standup name cannot be empty")
-	}
-	if len(input.Questions) == 0 {
-		return errors.New("at least one question is required")
-	}
+func (s *StandupService) CreateStandup(input models.Standup) (*models.Standup, error) {
+    if input.Name == "" {
+        return nil, errors.New("standup name cannot be empty")
+    }
+    if len(input.Questions) == 0 {
+        return nil, errors.New("at least one question is required")
+    }
+    if input.GuildID == "" {
+        return nil, errors.New("guild ID cannot be empty")
+    }
 
-	return s.DB.Create(&input).Error
+    if err := s.DB.FirstOrCreate(&models.Guild{}, models.Guild{GuildID: input.GuildID}).Error; err != nil {
+        return nil, fmt.Errorf("failed to register guild in database: %v", err)
+    }
+
+    if err := s.DB.Create(&input).Error; err != nil {
+        return nil, err
+    }
+    
+    return &input, nil
 }
 
 func (s *StandupService) UpdateStandup(standup models.Standup) error {

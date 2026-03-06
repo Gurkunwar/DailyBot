@@ -63,79 +63,78 @@ func generateDaysMenu(standupID uint, activeDaysStr string) discordgo.MessageCom
 }
 
 func (h *StandupHandler) handleCreateStandup(session *discordgo.Session, intr *discordgo.InteractionCreate) {
-	userID := utils.ExtractUserID(intr)
-	optMap := utils.ParseCommandOptions(intr)
+    userID := utils.ExtractUserID(intr)
+    optMap := utils.ParseCommandOptions(intr)
 
-	name := optMap["name"].StringValue()
-	channelID := optMap["channel"].ChannelValue(session).ID
-	membersRaw := optMap["members"].StringValue()
+    name := optMap["name"].StringValue()
+    channelID := optMap["channel"].ChannelValue(session).ID
+    membersRaw := optMap["members"].StringValue()
 
-	standupTime := "09:00"
-	if opt, ok := optMap["time"]; ok {
-		standupTime = opt.StringValue()
-	}
+    standupTime := "09:00"
+    if opt, ok := optMap["time"]; ok {
+        standupTime = opt.StringValue()
+    }
 
-	defaultQuestions := []string{
-		"What did you accomplish yesterday?",
-		"What will you do today?",
-		"Are you stuck anywhere? (Blockers)",
-	}
+    defaultQuestions := []string{
+        "What did you accomplish yesterday?",
+        "What will you do today?",
+        "Are you stuck anywhere? (Blockers)",
+    }
 
-	standup := models.Standup{
-		Name:            name,
-		ReportChannelID: channelID,
-		GuildID:         intr.GuildID,
-		ManagerID:       userID,
-		Time:            standupTime,
-		Questions:       defaultQuestions,
-		Days:            "Monday,Tuesday,Wednesday,Thursday,Friday",
-	}
+    standupInput := models.Standup{
+        Name:            name,
+        ReportChannelID: channelID,
+        GuildID:         intr.GuildID,
+        ManagerID:       userID,
+        Time:            standupTime,
+        Questions:       defaultQuestions,
+        Days:            "Monday,Tuesday,Wednesday,Thursday,Friday",
+    }
 
-	h.DB.FirstOrCreate(&models.Guild{}, models.Guild{GuildID: intr.GuildID})
-	var manager models.UserProfile
-	h.DB.FirstOrCreate(&manager, models.UserProfile{UserID: userID})
+    var manager models.UserProfile
+    h.DB.FirstOrCreate(&manager, models.UserProfile{UserID: userID})
 
-	if err := h.StandupService.CreateStandup(standup); err != nil {
-		utils.RespondWithMessage(session, intr, "❌ Failed to create standup.", true)
-		return
-	}
+    createdStandup, err := h.StandupService.CreateStandup(standupInput)
+    if err != nil {
+        utils.RespondWithMessage(session, intr, "❌ Failed to create standup.", true)
+        return
+    }
 
-	h.DB.Where("guild_id = ? AND name = ?", intr.GuildID, name).First(&standup)
-	addedCount := 0
+    addedCount := 0
+    re := regexp.MustCompile(`<@!?(\d+)>`)
+    matches := re.FindAllStringSubmatch(membersRaw, -1)
 
-	re := regexp.MustCompile(`<@!?(\d+)>`)
-	matches := re.FindAllStringSubmatch(membersRaw, -1)
+    for _, match := range matches {
+        if len(match) > 1 {
+            targetUserID := match[1]
+            var user models.UserProfile
+            h.DB.FirstOrCreate(&user, models.UserProfile{UserID: targetUserID})
+            
+            h.DB.Model(&user).Association("Standups").Append(createdStandup)
+            addedCount++
 
-	for _, match := range matches {
-		if len(match) > 1 {
-			targetUserID := match[1]
-			var user models.UserProfile
-			h.DB.FirstOrCreate(&user, models.UserProfile{UserID: targetUserID})
-			h.DB.Model(&user).Association("Standups").Append(&standup)
-			addedCount++
+            go func(uID string, tz string) {
+                dmChannel, err := session.UserChannelCreate(uID)
+                if err == nil {
+                    timeDisplay := utils.FormatLocalTime(createdStandup.Time, tz)
+                    welcomeMsg := fmt.Sprintf("👋 **You've been added to the '%s' Standup!**\n\n"+
+                        "⏰ Scheduled for: %s\nRun `/start` here or in the server to begin.",
+                        createdStandup.Name, timeDisplay)
+                    session.ChannelMessageSend(dmChannel.ID, welcomeMsg)
+                }
+            }(targetUserID, user.Timezone)
+        }
+    }
 
-			go func(uID string, tz string) {
-				dmChannel, err := session.UserChannelCreate(uID)
-				if err == nil {
-					timeDisplay := utils.FormatLocalTime(standup.Time, tz)
-					welcomeMsg := fmt.Sprintf("👋 **You've been added to the '%s' Standup!**\n\n"+
-						"⏰ Scheduled for: %s\nRun `/start` here or in the server to begin.",
-						name, timeDisplay)
-					session.ChannelMessageSend(dmChannel.ID, welcomeMsg)
-				}
-			}(targetUserID, user.Timezone)
-		}
-	}
+    timeDisplay := utils.FormatLocalTime(createdStandup.Time, manager.Timezone)
+    successMsg := fmt.Sprintf("🎉 **Standup '%s' created successfully!**\n"+
+        "⏰ Scheduled for: **%s** on **Monday-Friday**\n"+
+        "👥 Added **%d** members.\n\n"+
+        "💡 *I have assigned the standard 3 Agile questions. Use `/edit-standup` "+
+        "to customize your questions or active days!*",
+        createdStandup.Name, timeDisplay, addedCount)
 
-	timeDisplay := utils.FormatLocalTime(standup.Time, manager.Timezone)
-	successMsg := fmt.Sprintf("🎉 **Standup '%s' created successfully!**\n"+
-		"⏰ Scheduled for: **%s** on **Monday-Friday**\n"+
-		"👥 Added **%d** members.\n\n"+
-		"💡 *I have assigned the standard 3 Agile questions. Use `/edit-standup` "+
-		"to customize your questions or active days!*",
-		standup.Name, timeDisplay, addedCount)
-
-	utils.RespondWithMessage(session, intr, successMsg, true)
+    utils.RespondWithMessage(session, intr, successMsg, true)
 }
 
 func (h *StandupHandler) handleEditStandup(session *discordgo.Session, intr *discordgo.InteractionCreate) {
