@@ -3,6 +3,7 @@ package services
 import (
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 
 	"github.com/Gurkunwar/asyncflow/internal/models"
@@ -19,9 +20,7 @@ func NewPollService(db *gorm.DB, session *discordgo.Session) *PollService {
 	return &PollService{DB: db, Session: session}
 }
 
-func (s *PollService) CreatePoll(guildID, channelID, creatorID,
-	question string, options []string, duration int) (*models.Poll, error) {
-
+func (s *PollService) CreatePoll(guildID, channelID, creatorID, question string, options []string, duration int) (*models.Poll, error) {
 	var pollAnswers []discordgo.PollAnswer
 
 	for _, optText := range options {
@@ -29,7 +28,6 @@ func (s *PollService) CreatePoll(guildID, channelID, creatorID,
 		if cleanOpt == "" {
 			continue
 		}
-
 		pollAnswers = append(pollAnswers, discordgo.PollAnswer{
 			Media: &discordgo.PollMedia{Text: cleanOpt},
 		})
@@ -40,26 +38,26 @@ func (s *PollService) CreatePoll(guildID, channelID, creatorID,
 	}
 
 	nativePoll := &discordgo.Poll{
-		Question: discordgo.PollMedia{Text: question},
-		Answers: pollAnswers,
+		Question:         discordgo.PollMedia{Text: question},
+		Answers:          pollAnswers,
 		AllowMultiselect: false,
-		Duration: duration,
+		Duration:         duration,
 	}
 
 	msg, err := s.Session.ChannelMessageSendComplex(channelID, &discordgo.MessageSend{
 		Poll: nativePoll,
 	})
 	if err != nil {
-        return nil, fmt.Errorf("failed to publish poll to discord: %w", err)
-    }
+		return nil, fmt.Errorf("failed to publish poll to discord: %w", err)
+	}
 
 	pollModel := models.Poll{
 		GuildID:   guildID,
-        ChannelID: channelID,
-        CreatorID: creatorID,
-        Question:  question,
-        MessageID: msg.ID,
-        IsActive:  true,
+		ChannelID: channelID,
+		CreatorID: creatorID,
+		Question:  question,
+		MessageID: msg.ID,
+		IsActive:  true,
 	}
 
 	tx := s.DB.Begin()
@@ -72,15 +70,21 @@ func (s *PollService) CreatePoll(guildID, channelID, creatorID,
 	for _, answer := range pollAnswers {
 		pollOpt := models.PollOption{
 			PollID: pollModel.ID,
-			Label: answer.Media.Text,
+			Label:  answer.Media.Text,
 		}
 		if err := tx.Create(&pollOpt).Error; err != nil {
 			tx.Rollback()
-            return nil, fmt.Errorf("database error creating poll option: %w", err)
+			return nil, fmt.Errorf("database error creating poll option: %w", err)
 		}
 	}
 
 	tx.Commit()
+
+	_, editErr := s.Session.ChannelMessageEdit(channelID, msg.ID,
+		fmt.Sprintf("📊 **Poll ID:** `%d`", pollModel.ID))
+	if editErr != nil {
+		log.Printf("Warning: Failed to stamp Poll ID onto message %s: %v", msg.ID, editErr)
+	}
 
 	return &pollModel, nil
 }
@@ -100,6 +104,26 @@ func (s *PollService) EndPoll(pollID uint) error {
 
 	poll.IsActive = false
 	return s.DB.Save(&poll).Error
+}
+
+func (s *PollService) DeletePoll(pollID uint) error {
+	var poll models.Poll
+	if err := s.DB.First(&poll, pollID).Error; err != nil {
+		return errors.New("poll not found in database")
+	}
+
+	if poll.ChannelID != "" && poll.MessageID != "" {
+		err := s.Session.ChannelMessageDelete(poll.ChannelID, poll.MessageID)
+		if err != nil {
+			log.Printf("Warning: Failed to delete Discord message for poll %d: %v", poll.ID, err)
+		}
+	}
+
+	if err := s.DB.Delete(&poll).Error; err != nil {
+		return fmt.Errorf("database error during deletion: %w", err)
+	}
+
+	return nil
 }
 
 func (s *PollService) GenerateCSVExport(pollID uint) (string, error) {

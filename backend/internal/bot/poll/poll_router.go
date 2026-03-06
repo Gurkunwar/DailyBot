@@ -23,6 +23,9 @@ func (h *PollHandler) PollRouter(session *discordgo.Session, intr *discordgo.Int
 			return true
 		case "poll-list":
 			h.handlePollList(session, intr)
+		case "poll-delete":
+			h.HandlePollDelete(session, intr)
+			return true
 		}
 	}
 

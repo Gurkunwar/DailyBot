@@ -3,7 +3,6 @@ package api
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"math"
 	"net/http"
 	"strconv"
@@ -26,7 +25,6 @@ func (s *Server) HandleGetManagedPolls(w http.ResponseWriter, r *http.Request) {
     searchQuery := r.URL.Query().Get("search")
     guildFilter := r.URL.Query().Get("guild_id")
 
-    // 1. PRE-FLIGHT PERMISSION CHECK (Fixes the Admin visibility bug)
     var combos []struct {
         GuildID   string
         ChannelID string
@@ -36,7 +34,6 @@ func (s *Server) HandleGetManagedPolls(w http.ResponseWriter, r *http.Request) {
     var adminGuildIDs []string
     for _, gc := range combos {
         if gc.ChannelID == "" { continue }
-        // Check if THIS specific user has admin rights in this specific channel
         p, err := s.Session.UserChannelPermissions(managerID, gc.ChannelID)
         if err == nil && (p&discordgo.PermissionAdministrator != 0 || p&discordgo.PermissionManageGuild != 0 || p&discordgo.PermissionManageServer != 0) {
             adminGuildIDs = append(adminGuildIDs, gc.GuildID)
@@ -45,7 +42,6 @@ func (s *Server) HandleGetManagedPolls(w http.ResponseWriter, r *http.Request) {
 
     query := s.DB.Model(&models.Poll{}).Order("id desc")
 
-    // 2. APPLY GUILD FILTER AND PERMISSIONS
     if guildFilter != "" && guildFilter != "All" {
         query = query.Where("guild_id = ?", guildFilter)
         
@@ -60,18 +56,15 @@ func (s *Server) HandleGetManagedPolls(w http.ResponseWriter, r *http.Request) {
                 }
             }
             
-            // If they are NOT an admin of this specific server, restrict to only what they created
             if !isAdminOfSelected {
                 query = query.Where("creator_id = ?", managerID)
             }
         }
     } else {
-        // NO GUILD SELECTED ("All")
         if onlyMe {
             query = query.Where("creator_id = ?", managerID)
         } else {
             if len(adminGuildIDs) > 0 {
-                // They can see their own polls OR polls in servers they admin
                 query = query.Where(
                     s.DB.Where("creator_id = ?", managerID).Or("guild_id IN ?", adminGuildIDs),
                 )
@@ -183,7 +176,7 @@ func (s *Server) HandleCreateWebPoll(w http.ResponseWriter, r *http.Request) {
 
 	managerID := r.Context().Value(UserIDKey).(string)
 
-	pollModel, err := s.PollService.CreatePoll(
+	_, err := s.PollService.CreatePoll(
 		payload.GuildID,
 		payload.ChannelID,
 		managerID,
@@ -197,9 +190,6 @@ func (s *Server) HandleCreateWebPoll(w http.ResponseWriter, r *http.Request) {
         return
 	}
 
-	receiptMessage := fmt.Sprintf("✅ Poll published! (Poll ID: `%d`)", pollModel.ID)
-	s.Session.ChannelMessageSend(payload.ChannelID, receiptMessage)
-
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(map[string]string{"message": "Poll published successfully!"})
 }
@@ -210,9 +200,15 @@ func (s *Server) HandleDeleteWebPoll(w http.ResponseWriter, r *http.Request) {
         return
     }
 
-    pollID := r.URL.Query().Get("id")
-    if pollID == "" {
+    pollIDStr := r.URL.Query().Get("id")
+    if pollIDStr == "" {
         http.Error(w, "Missing poll id", http.StatusBadRequest)
+        return
+    }
+    
+    pollID, err := strconv.ParseUint(pollIDStr, 10, 32)
+    if err != nil {
+        http.Error(w, "Invalid poll ID", http.StatusBadRequest)
         return
     }
 
@@ -224,20 +220,13 @@ func (s *Server) HandleDeleteWebPoll(w http.ResponseWriter, r *http.Request) {
         return
     }
 
-    if poll.ChannelID != "" && poll.MessageID != "" {
-        err := s.Session.ChannelMessageDelete(poll.ChannelID, poll.MessageID)
-        if err != nil {
-            log.Printf("Warning: Failed to delete Discord message for poll %d: %v", poll.ID, err)
-        }
-    }
-
-    if err := s.DB.Delete(&poll).Error; err != nil {
-        http.Error(w, "Database error during deletion", http.StatusInternalServerError)
+    if err := s.PollService.DeletePoll(uint(pollID)); err != nil {
+        http.Error(w, "Failed to delete poll", http.StatusInternalServerError)
         return
     }
 
     w.WriteHeader(http.StatusOK)
-    json.NewEncoder(w).Encode(map[string]string{"message": "Poll deleted successfully from Discord and Dashboard"})
+    json.NewEncoder(w).Encode(map[string]string{"message": "Poll deleted successfully"})
 }
 
 func (s *Server) HandleEndWebPoll(w http.ResponseWriter, r *http.Request) {

@@ -24,6 +24,33 @@ func (h *PollHandler) HandlePollEnd(session *discordgo.Session, intr *discordgo.
 	utils.RespondWithMessage(session, intr, "✅ **Poll has been successfully closed!**", true)
 }
 
+func (h *PollHandler) HandlePollDelete(session *discordgo.Session, intr *discordgo.InteractionCreate) {
+    if !utils.IsServerAdmin(intr) {
+        utils.RespondWithMessage(session, intr, "⛔ This command is reserved for Server Admins.", true)
+        return
+    }
+
+    pollID := uint(intr.ApplicationCommandData().Options[0].IntValue())
+    
+    var poll models.Poll
+    if err := h.Service.DB.First(&poll, pollID).Error; err != nil {
+        utils.RespondWithMessage(session, intr, "❌ Poll not found in DB.", true)
+        return
+    }
+    
+    if poll.GuildID != intr.GuildID {
+        utils.RespondWithMessage(session, intr, "⛔ This poll belongs to another server.", true)
+        return
+    }
+
+    if err := h.Service.DeletePoll(pollID); err != nil {
+        utils.RespondWithMessage(session, intr, fmt.Sprintf("❌ %v", err), true)
+        return
+    }
+
+    utils.RespondWithMessage(session, intr, "🗑️ **Poll has been successfully deleted!**", true)
+}
+
 func (h *PollHandler) HandlePollExport(session *discordgo.Session, intr *discordgo.InteractionCreate) {
     if !utils.IsServerAdmin(intr) {
         utils.RespondWithMessage(session, intr, "⛔ Admin only.", true)

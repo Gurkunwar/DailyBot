@@ -10,59 +10,57 @@ import (
 )
 
 func (h *PollHandler) handleCreateNativePoll(session *discordgo.Session, intr *discordgo.InteractionCreate) {
-	userID := intr.Member.User.ID
-	options := intr.ApplicationCommandData().Options
+    userID := intr.Member.User.ID
+    options := intr.ApplicationCommandData().Options
 
-	optionMap := make(map[string]*discordgo.ApplicationCommandInteractionDataOption, len(options))
-	for _, opt := range options {
-		optionMap[opt.Name] = opt
-	}
+    optionMap := make(map[string]*discordgo.ApplicationCommandInteractionDataOption, len(options))
+    for _, opt := range options {
+        optionMap[opt.Name] = opt
+    }
 
-	questionText := optionMap["question"].StringValue()
+    questionText := optionMap["question"].StringValue()
 
-	durationHours := 24
-	if opt, ok := optionMap["duration"]; ok {
-		durationHours = int(opt.IntValue())
-	}
+    durationHours := 24
+    if opt, ok := optionMap["duration"]; ok {
+        durationHours = int(opt.IntValue())
+    }
 
-	var strOptions []string
-	for i := 1; i <= 5; i++ {
-		optName := fmt.Sprintf("option_%d", i)
-		if opt, ok := optionMap[optName]; ok && opt.StringValue() != "" {
-			strOptions = append(strOptions, opt.StringValue())
-		}
-	}
+    var strOptions []string
+    for i := 1; i <= 5; i++ {
+        optName := fmt.Sprintf("option_%d", i)
+        if opt, ok := optionMap[optName]; ok && opt.StringValue() != "" {
+            strOptions = append(strOptions, opt.StringValue())
+        }
+    }
 
-	pollModel, err := h.Service.CreatePoll(
-		intr.GuildID,
-		intr.ChannelID,
-		userID,
-		questionText,
-		strOptions,
-		durationHours,
-	)
+    pollModel, err := h.Service.CreatePoll(
+        intr.GuildID,
+        intr.ChannelID,
+        userID,
+        questionText,
+        strOptions,
+        durationHours,
+    )
 
-	if err != nil {
-		session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
-			Type: discordgo.InteractionResponseChannelMessageWithSource,
-			Data: &discordgo.InteractionResponseData{
-				Content: fmt.Sprintf("❌ Failed to publish native poll: %v", err),
-				Flags:   discordgo.MessageFlagsEphemeral,
-			},
-		})
-		return
-	}
+    if err != nil {
+        session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
+            Type: discordgo.InteractionResponseChannelMessageWithSource,
+            Data: &discordgo.InteractionResponseData{
+                Content: fmt.Sprintf("❌ Failed to publish native poll: %v", err),
+                Flags:   discordgo.MessageFlagsEphemeral,
+            },
+        })
+        return
+    }
 
-	receiptMessage := fmt.Sprintf("✅ Poll published! (Poll ID: `%d`)", pollModel.ID)
-	session.ChannelMessageSend(intr.ChannelID, receiptMessage)
 
-	session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
-		Type: discordgo.InteractionResponseChannelMessageWithSource,
-		Data: &discordgo.InteractionResponseData{
-			Content: "Poll created successfully.",
-			Flags:   discordgo.MessageFlagsEphemeral,
-		},
-	})
+    session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
+        Type: discordgo.InteractionResponseChannelMessageWithSource,
+        Data: &discordgo.InteractionResponseData{
+            Content: fmt.Sprintf("✅ Poll created successfully! (Poll ID: `%d`)", pollModel.ID),
+            Flags:   discordgo.MessageFlagsEphemeral,
+        },
+    })
 }
 
 func (h *PollHandler) HandlePollAudit(session *discordgo.Session, intr *discordgo.InteractionCreate) {

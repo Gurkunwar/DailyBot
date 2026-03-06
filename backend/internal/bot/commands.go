@@ -287,4 +287,17 @@ var Commands = []*discordgo.ApplicationCommand{
             },
         },
     },
+	{
+        Name:                     "poll-delete",
+        Description:              "🗑️ Permanently delete a poll from Discord and the Dashboard (Admin Only).",
+        DefaultMemberPermissions: &adminPerms,
+        Options: []*discordgo.ApplicationCommandOption{
+            {
+                Type:        discordgo.ApplicationCommandOptionInteger,
+                Name:        "poll-id",
+                Description: "The ID of the poll to delete",
+                Required:    true,
+            },
+        },
+    },
 }
