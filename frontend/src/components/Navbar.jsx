@@ -38,7 +38,8 @@ export default function Navbar() {
         
         <button
           onClick={handleAuthAction}
-          className="bg-[#5865F2] hover:bg-[#4752C4] text-white text-sm font-semibold py-2 px-5 rounded-full transition-colors duration-200 cursor-pointer shadow-md"
+          className="bg-[#5865F2] hover:bg-[#4752C4] text-white text-sm font-semibold py-2 px-5 
+          rounded-full transition-colors duration-200 cursor-pointer shadow-md"
         >
           {isAuthenticated ? "Logout" : "Login"}
         </button>

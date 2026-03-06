@@ -2,7 +2,6 @@ package standup
 
 import (
 	"fmt"
-	"log"
 	"regexp"
 	"strings"
 
@@ -16,7 +15,6 @@ func (h *StandupHandler) handleCreateStandup(session *discordgo.Session, intr *d
 	userID := intr.Member.User.ID
 	guildID := intr.GuildID
 
-	// 1. Parse the basic arguments
 	name := options[0].StringValue()
 	channelID := options[1].ChannelValue(session).ID
 	membersRaw := options[2].StringValue()
@@ -26,36 +24,31 @@ func (h *StandupHandler) handleCreateStandup(session *discordgo.Session, intr *d
 		standupTime = options[3].StringValue()
 	}
 
-	// 2. Define the Default Agile Questions
 	defaultQuestions := []string{
 		"What did you accomplish yesterday?",
 		"What will you do today?",
 		"Are you stuck anywhere? (Blockers)",
 	}
 
-	// 3. Create the Database Record Instantly
 	standup := models.Standup{
 		Name:            name,
 		ReportChannelID: channelID,
 		GuildID:         guildID,
 		ManagerID:       userID,
 		Time:            standupTime,
-		Questions:       defaultQuestions, // Inject default questions!
+		Questions:       defaultQuestions,
 		Days:            "Monday,Tuesday,Wednesday,Thursday,Friday",
 	}
 
-	// Ensure Guild and Manager exist in DB
 	h.DB.FirstOrCreate(&models.Guild{}, models.Guild{GuildID: guildID})
 	var manager models.UserProfile
 	h.DB.FirstOrCreate(&manager, models.UserProfile{UserID: userID})
 
-	// Save Standup
 	if err := h.StandupService.CreateStandup(standup); err != nil {
 		utils.RespondWithMessage(session, intr, "❌ Failed to create standup.", true)
 		return
 	}
 
-	// 4. Parse members and link them to the standup
 	h.DB.Where("guild_id = ? AND name = ?", guildID, name).First(&standup)
 	addedCount := 0
 
@@ -70,12 +63,12 @@ func (h *StandupHandler) handleCreateStandup(session *discordgo.Session, intr *d
 			h.DB.Model(&user).Association("Standups").Append(&standup)
 			addedCount++
 
-			// Ping them in DMs silently
 			go func(uID string, tz string) {
 				dmChannel, err := session.UserChannelCreate(uID)
 				if err == nil {
 					timeDisplay := utils.FormatLocalTime(standup.Time, tz)
-					welcomeMsg := fmt.Sprintf("👋 **You've been added to the '%s' Standup!**\n\n⏰ Scheduled for: %s\nRun `/start` here or in the server to begin.",
+					welcomeMsg := fmt.Sprintf("👋 **You've been added to the '%s' Standup!**\n\n"+
+						"⏰ Scheduled for: %s\nRun `/start` here or in the server to begin.",
 						name, timeDisplay)
 					session.ChannelMessageSend(dmChannel.ID, welcomeMsg)
 				}
@@ -83,12 +76,12 @@ func (h *StandupHandler) handleCreateStandup(session *discordgo.Session, intr *d
 		}
 	}
 
-	// 5. Send Success Message
 	timeDisplay := utils.FormatLocalTime(standup.Time, manager.Timezone)
 	successMsg := fmt.Sprintf("🎉 **Standup '%s' created successfully!**\n"+
 		"⏰ Scheduled for: **%s** on **Monday-Friday**\n"+
 		"👥 Added **%d** members.\n\n"+
-		"💡 *I have assigned the standard 3 Agile questions. Use `/edit-standup` to customize your questions or active days!*",
+		"💡 *I have assigned the standard 3 Agile questions. Use `/edit-standup` "+
+		"to customize your questions or active days!*",
 		standup.Name, timeDisplay, addedCount)
 
 	session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
@@ -270,7 +263,8 @@ func (h *StandupHandler) showQuestionDashboard(session *discordgo.Session,
 		},
 	})
 
-	content := fmt.Sprintf("📋 **Managing Questions for %s**\n\n%s\n*💡 To delete a question, select it and completely clear the text box!*",
+	content := fmt.Sprintf("📋 **Managing Questions for %s**\n\n%s\n*💡 To delete a question, "+
+		"select it and completely clear the text box!*",
 		standup.Name, qList.String())
 
 	respType := discordgo.InteractionResponseChannelMessageWithSource
@@ -350,7 +344,8 @@ func (h *StandupHandler) handleEditDaysSubmit(session *discordgo.Session,
 	session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseUpdateMessage,
 		Data: &discordgo.InteractionResponseData{
-			Content: fmt.Sprintf("✅ Active days for **%s** have been updated to:\n**%s**\n\nUse the menu below to make further changes, or click Done.",
+			Content: fmt.Sprintf("✅ Active days for **%s** have been updated to:\n**%s**\n\n"+
+				"Use the menu below to make further changes, or click Done.",
 				standup.Name, prettyDays),
 			Components: []discordgo.MessageComponent{
 				discordgo.ActionsRow{
@@ -448,31 +443,22 @@ func (h *StandupHandler) handleDeleteStandup(session *discordgo.Session, intr *d
 	userID := utils.ExtractUserID(intr)
 
 	var standup models.Standup
-	result := h.DB.Preload("Participants").
-		Where("guild_id = ? and name = ?", intr.GuildID, standupName).
-		First(&standup)
-	if result.Error != nil {
-		utils.RespondWithError(session, intr.Interaction, fmt.Sprintf("Standup named **%s** not found in this server.", standupName))
+	if err := h.DB.Where("guild_id = ? and name = ?", intr.GuildID, standupName).First(&standup).Error; err != nil {
+		utils.RespondWithError(session, intr.Interaction, "Standup not found.")
 		return
 	}
 
 	if standup.ManagerID != userID && !utils.IsServerAdmin(intr) {
-		utils.RespondWithError(session, intr.Interaction, "⛔ Only the manager who created this standup can delete it.")
+		utils.RespondWithError(session, intr.Interaction, "⛔ Unauthorized.")
 		return
 	}
 
-	if err := h.DB.Model(&standup).Association("Participants").Clear(); err != nil {
-		log.Println("Error clearing standup participants during deletion:", err)
-	}
-
-	if err := h.DB.Unscoped().Delete(&standup).Error; err != nil {
-		utils.RespondWithError(session, intr.Interaction, "Failed to delete the standup from the database.")
+	if err := h.StandupService.DeleteStandup(standup.ID); err != nil {
+		utils.RespondWithError(session, intr.Interaction, "Failed to delete standup.")
 		return
 	}
 
-	utils.RespondWithMessage(session, intr,
-		fmt.Sprintf("🗑️ ✅ Standup **%s** and all its participant links have been permanently deleted.", standup.Name),
-		true)
+	utils.RespondWithMessage(session, intr, fmt.Sprintf("🗑️ ✅ Standup **%s** deleted.", standup.Name), true)
 }
 
 func (h *StandupHandler) handleAddMember(session *discordgo.Session, intr *discordgo.InteractionCreate) {
@@ -510,20 +496,8 @@ func (h *StandupHandler) handleAddMember(session *discordgo.Session, intr *disco
 		return
 	}
 
-	utils.RespondWithMessage(session, intr, fmt.Sprintf("✅ <@%s> has been added to **%s**!", targetUser.ID, standup.Name), true)
-
-	dmChannel, err := session.UserChannelCreate(targetUser.ID)
-	if err == nil {
-		timeDisplay := utils.FormatLocalTime(standup.Time, targetProfile.Timezone)
-		welcomeMsg := fmt.Sprintf(
-			"👋 **You've been added to the '%s' Standup!**\n\n"+
-				"⏰ This standup is scheduled for %s\n\n"+
-				"You can now submit your daily reports for this team.\n"+
-				"Run `/start` here or in the server to begin.",
-			standup.Name, timeDisplay,
-		)
-		session.ChannelMessageSend(dmChannel.ID, welcomeMsg)
-	}
+	utils.RespondWithMessage(session, intr,
+		fmt.Sprintf("✅ <@%s> has been added to **%s**!", targetUser.ID, standup.Name), true)
 }
 
 func (h *StandupHandler) handleRemoveMember(session *discordgo.Session, intr *discordgo.InteractionCreate) {
@@ -559,14 +533,9 @@ func (h *StandupHandler) handleRemoveMember(session *discordgo.Session, intr *di
 		return
 	}
 
-	utils.RespondWithMessage(session, intr, fmt.Sprintf("✅ <@%s> has been successfully removed from **%s**.", targetUser.ID, standup.Name), true)
-
-	dmChannel, err := session.UserChannelCreate(targetUser.ID)
-	if err == nil {
-		session.ChannelMessageSend(dmChannel.ID, fmt.Sprintf(
-			"ℹ️ You have been removed from the **%s** standup team by the manager.",
-			standup.Name))
-	}
+	utils.RespondWithMessage(session, intr,
+		fmt.Sprintf("✅ <@%s> has been successfully removed from **%s**.",
+			targetUser.ID, standup.Name), true)
 }
 
 func (h *StandupHandler) handleStandupInfo(session *discordgo.Session, intr *discordgo.InteractionCreate) {

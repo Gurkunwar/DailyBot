@@ -14,94 +14,108 @@ import (
 )
 
 func (s *Server) HandleGetManagedPolls(w http.ResponseWriter, r *http.Request) {
-	managerID := r.Context().Value(UserIDKey).(string)
-	onlyMe := r.URL.Query().Get("filter") == "me"
+    managerID := r.Context().Value(UserIDKey).(string)
+    onlyMe := r.URL.Query().Get("filter") == "me"
 
-	// 1. Pagination Setup
-	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
-	if page < 1 {
-		page = 1
-	}
-	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	if limit <= 0 {
-		limit = 12
-	} // 12 fits nicely in a 3-column grid
+    page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+    if page < 1 { page = 1 }
+    limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+    if limit <= 0 { limit = 12 }
+    offset := (page - 1) * limit
 
-	offset := (page - 1) * limit
+    searchQuery := r.URL.Query().Get("search")
+    guildFilter := r.URL.Query().Get("guild_id")
 
-	searchQuery := r.URL.Query().Get("search")
+    // 1. PRE-FLIGHT PERMISSION CHECK (Fixes the Admin visibility bug)
+    var combos []struct {
+        GuildID   string
+        ChannelID string
+    }
+    s.DB.Model(&models.Poll{}).Distinct("guild_id", "channel_id").Select("guild_id", "channel_id").Find(&combos)
 
-	// 2. Build Admin Guilds List for strict DB filtering
-	var adminGuildIDs []string
-	userGuilds, err := s.Session.UserGuilds(100, "", "", false)
-	if err == nil {
-		for _, g := range userGuilds {
-			// Check if user has admin/management rights
-			if g.Owner ||
-				g.Permissions&discordgo.PermissionAdministrator != 0 ||
-				g.Permissions&discordgo.PermissionManageGuild != 0 {
-				adminGuildIDs = append(adminGuildIDs, g.ID)
-			}
-		}
-	}
+    var adminGuildIDs []string
+    for _, gc := range combos {
+        if gc.ChannelID == "" { continue }
+        // Check if THIS specific user has admin rights in this specific channel
+        p, err := s.Session.UserChannelPermissions(managerID, gc.ChannelID)
+        if err == nil && (p&discordgo.PermissionAdministrator != 0 || p&discordgo.PermissionManageGuild != 0 || p&discordgo.PermissionManageServer != 0) {
+            adminGuildIDs = append(adminGuildIDs, gc.GuildID)
+        }
+    }
 
-	var allPolls []models.Poll
-	var totalCount int64
+    query := s.DB.Model(&models.Poll{}).Order("id desc")
 
-	// 3. Construct GORM Query
-	query := s.DB.Model(&models.Poll{}).Order("id desc")
+    // 2. APPLY GUILD FILTER AND PERMISSIONS
+    if guildFilter != "" && guildFilter != "All" {
+        query = query.Where("guild_id = ?", guildFilter)
+        
+        if onlyMe {
+            query = query.Where("creator_id = ?", managerID)
+        } else {
+            isAdminOfSelected := false
+            for _, id := range adminGuildIDs {
+                if id == guildFilter {
+                    isAdminOfSelected = true
+                    break
+                }
+            }
+            
+            // If they are NOT an admin of this specific server, restrict to only what they created
+            if !isAdminOfSelected {
+                query = query.Where("creator_id = ?", managerID)
+            }
+        }
+    } else {
+        // NO GUILD SELECTED ("All")
+        if onlyMe {
+            query = query.Where("creator_id = ?", managerID)
+        } else {
+            if len(adminGuildIDs) > 0 {
+                // They can see their own polls OR polls in servers they admin
+                query = query.Where(
+                    s.DB.Where("creator_id = ?", managerID).Or("guild_id IN ?", adminGuildIDs),
+                )
+            } else {
+                query = query.Where("creator_id = ?", managerID)
+            }
+        }
+    }
 
-	if onlyMe {
-		query = query.Where("creator_id = ?", managerID)
-	} else {
-		if len(adminGuildIDs) > 0 {
-			// Can see polls they created OR polls in servers they manage
-			query = query.Where("creator_id = ? OR guild_id IN ?", managerID, adminGuildIDs)
-		} else {
-			query = query.Where("creator_id = ?", managerID)
-		}
-	}
+    if searchQuery != "" {
+        query = query.Where("question ILIKE ?", "%"+searchQuery+"%")
+    }
 
-	if searchQuery != "" {
-		query = query.Where("question ILIKE ?", "%"+searchQuery+"%")
-	}
+    var totalCount int64
+    query.Count(&totalCount)
 
-	// 4. Count total before applying offset/limit
-	query.Count(&totalCount)
+    var allPolls []models.Poll
+    if err := query.Offset(offset).Limit(limit).Find(&allPolls).Error; err != nil {
+        http.Error(w, "Database error", http.StatusInternalServerError)
+        return
+    }
 
-	// 5. Apply pagination limit and fetch
-	if err := query.Offset(offset).Limit(limit).Find(&allPolls).Error; err != nil {
-		http.Error(w, "Database error", http.StatusInternalServerError)
-		return
-	}
+    var response []dtos.PollDTO
+    for _, p := range allPolls {
+        gName, cName := s.GetDiscordMetadata(p.GuildID, p.ChannelID)
+        response = append(response, dtos.PollDTO{
+            ID:          p.ID,
+            Question:    p.Question,
+            GuildName:   gName,
+            ChannelName: cName,
+            IsActive:    p.IsActive,
+        })
+    }
+    if response == nil { response = []dtos.PollDTO{} }
 
-	var response []dtos.PollDTO
-	for _, p := range allPolls {
-		gName, cName := s.GetDiscordMetadata(p.GuildID, p.ChannelID)
-		response = append(response, dtos.PollDTO{
-			ID:          p.ID,
-			Question:    p.Question,
-			GuildName:   gName,
-			ChannelName: cName,
-			IsActive:    p.IsActive,
-		})
-	}
-	if response == nil {
-		response = []dtos.PollDTO{}
-	}
+    totalPages := int(math.Ceil(float64(totalCount) / float64(limit)))
 
-	totalPages := int(math.Ceil(float64(totalCount) / float64(limit)))
-
-	// 6. Return standard pagination payload
-	resPayload := map[string]interface{}{
-		"data":        response,
-		"total_count": totalCount,
-		"page":        page,
-		"total_pages": totalPages,
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resPayload)
+    w.Header().Set("Content-Type", "application/json")
+    json.NewEncoder(w).Encode(map[string]interface{}{
+        "data":        response,
+        "total_count": totalCount,
+        "page":        page,
+        "total_pages": totalPages,
+    })
 }
 
 func (s *Server) HandleGetPoll(w http.ResponseWriter, r *http.Request) {

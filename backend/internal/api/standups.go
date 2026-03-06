@@ -2,8 +2,6 @@ package api
 
 import (
 	"encoding/json"
-	"fmt"
-	"log"
 	"math"
 	"net/http"
 	"strconv"
@@ -18,7 +16,6 @@ func (s *Server) HandleGetManagedStandups(dg *discordgo.Session) http.HandlerFun
 		managerID := r.Context().Value(UserIDKey).(string)
 		onlyMe := r.URL.Query().Get("filter") == "me"
 
-		// 1. Pagination & Search Setup
 		page, _ := strconv.Atoi(r.URL.Query().Get("page"))
 		if page < 1 {
 			page = 1
@@ -30,39 +27,70 @@ func (s *Server) HandleGetManagedStandups(dg *discordgo.Session) http.HandlerFun
 		offset := (page - 1) * limit
 
 		searchQuery := r.URL.Query().Get("search")
+		guildFilter := r.URL.Query().Get("guild_id")
 
-		// 2. Pre-fetch Admin Guilds for optimization (Stops N+1 Discord API limits)
+		// 1. PRE-FLIGHT PERMISSION CHECK (Fixes the Admin visibility bug)
+		// Find all unique guild/channel combinations where standups exist
+		var combos []struct {
+			GuildID         string
+			ReportChannelID string
+		}
+		s.DB.Model(&models.Standup{}).Distinct("guild_id", "report_channel_id").Select("guild_id", "report_channel_id").Find(&combos)
+
 		var adminGuildIDs []string
-		userGuilds, err := dg.UserGuilds(100, "", "", false)
-		if err == nil {
-			for _, g := range userGuilds {
-				if g.Owner ||
-					g.Permissions&discordgo.PermissionAdministrator != 0 ||
-					g.Permissions&discordgo.PermissionManageGuild != 0 {
-					adminGuildIDs = append(adminGuildIDs, g.ID)
+		for _, gc := range combos {
+			if gc.ReportChannelID == "" {
+				continue
+			}
+			// Check if THIS specific user has admin rights in this specific channel
+			p, err := s.Session.UserChannelPermissions(managerID, gc.ReportChannelID)
+			if err == nil && (p&discordgo.PermissionAdministrator != 0 || p&discordgo.PermissionManageGuild != 0 || p&discordgo.PermissionManageServer != 0) {
+				adminGuildIDs = append(adminGuildIDs, gc.GuildID)
+			}
+		}
+
+		query := s.DB.Model(&models.Standup{}).Order("id desc")
+
+		// 2. APPLY GUILD FILTER AND PERMISSIONS
+		if guildFilter != "" && guildFilter != "All" {
+			query = query.Where("guild_id = ?", guildFilter)
+
+			if onlyMe {
+				query = query.Where("manager_id = ?", managerID)
+			} else {
+				isAdminOfSelected := false
+				for _, id := range adminGuildIDs {
+					if id == guildFilter {
+						isAdminOfSelected = true
+						break
+					}
+				}
+
+				// If they are NOT an admin of this specific server, restrict to only what they created
+				if !isAdminOfSelected {
+					query = query.Where("manager_id = ?", managerID)
+				}
+			}
+		} else {
+			// NO GUILD SELECTED ("All")
+			if onlyMe {
+				query = query.Where("manager_id = ?", managerID)
+			} else {
+				if len(adminGuildIDs) > 0 {
+					// They can see their own standups OR standups in servers they admin
+					query = query.Where(
+						s.DB.Where("manager_id = ?", managerID).Or("guild_id IN ?", adminGuildIDs),
+					)
+				} else {
+					query = query.Where("manager_id = ?", managerID)
 				}
 			}
 		}
 
-		// 3. Construct Query
-		query := s.DB.Model(&models.Standup{}).Order("id desc")
-
-		if onlyMe {
-			query = query.Where("manager_id = ?", managerID)
-		} else {
-			if len(adminGuildIDs) > 0 {
-				query = query.Where("manager_id = ? OR guild_id IN ?", managerID, adminGuildIDs)
-			} else {
-				query = query.Where("manager_id = ?", managerID)
-			}
-		}
-
-		// Apply Search Filter
 		if searchQuery != "" {
 			query = query.Where("name ILIKE ?", "%"+searchQuery+"%")
 		}
 
-		// 4. Count and Fetch
 		var totalCount int64
 		query.Count(&totalCount)
 
@@ -72,12 +100,9 @@ func (s *Server) HandleGetManagedStandups(dg *discordgo.Session) http.HandlerFun
 			return
 		}
 
-		// 5. Map to Response DTO
 		var response []dtos.StandupDTO
 		for _, st := range allStandups {
-			// Re-using your optimized GetDiscordMetadata helper!
 			gName, cName := s.GetDiscordMetadata(st.GuildID, st.ReportChannelID)
-
 			response = append(response, dtos.StandupDTO{
 				ID:              st.ID,
 				Name:            st.Name,
@@ -87,10 +112,10 @@ func (s *Server) HandleGetManagedStandups(dg *discordgo.Session) http.HandlerFun
 				ReportChannelID: st.ReportChannelID,
 			})
 		}
-
 		if response == nil {
 			response = []dtos.StandupDTO{}
 		}
+
 		totalPages := int(math.Ceil(float64(totalCount) / float64(limit)))
 
 		w.Header().Set("Content-Type", "application/json")
@@ -174,7 +199,7 @@ func (s *Server) HandleUpdateStandup(w http.ResponseWriter, r *http.Request) {
 
 	var standup models.Standup
 	if err := s.DB.Where("id = ? AND manager_id = ?", payload.ID, managerID).First(&standup).Error; err != nil {
-		http.Error(w, "Standup not found or unauthorized", http.StatusUnauthorized)
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
@@ -184,8 +209,8 @@ func (s *Server) HandleUpdateStandup(w http.ResponseWriter, r *http.Request) {
 	standup.ReportChannelID = payload.ReportChannelID
 	standup.Questions = payload.Questions
 
-	if err := s.DB.Save(&standup).Error; err != nil {
-		http.Error(w, "Failed to update standup", http.StatusInternalServerError)
+	if err := s.StandupService.UpdateStandup(standup); err != nil {
+		http.Error(w, "Failed to update", http.StatusInternalServerError)
 		return
 	}
 
@@ -196,51 +221,24 @@ func (s *Server) HandleUpdateStandup(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) HandleDeleteStandup(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodDelete {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	standupID := r.URL.Query().Get("id")
-	if standupID == "" {
-		http.Error(w, "Missing id", http.StatusBadRequest)
-		return
-	}
-
+	standupIDStr := r.URL.Query().Get("id")
+	standupID, _ := strconv.ParseUint(standupIDStr, 10, 32)
 	managerID := r.Context().Value(UserIDKey).(string)
 
-	var standup models.Standup
-	if err := s.DB.Where("id = ? AND manager_id = ?", standupID, managerID).First(&standup).Error; err != nil {
-		http.Error(w, "Standup not found or unauthorized", http.StatusUnauthorized)
+	if err := s.DB.Where("id = ? AND manager_id = ?", standupID, managerID).
+		First(&models.Standup{}).Error; err != nil {
+
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
-	if standup.ReportChannelID != "" {
-		goodbyeMsg := fmt.Sprintf(
-			"🛑 **The '%s' standup has been permanently deleted by the manager.**\n"+
-				"No further daily prompts will be sent for this team.",
-			standup.Name)
-
-		_, err := s.Session.ChannelMessageSend(standup.ReportChannelID, goodbyeMsg)
-		if err != nil {
-			log.Printf("Warning: Failed to send deletion notice to channel %s for standup %d: %v",
-				standup.ReportChannelID, standup.ID, err)
-		}
-	}
-
-	if err := s.DB.Model(&standup).Association("Participants").Clear(); err != nil {
-		log.Println("Error clearing standup participants during deletion:", err)
-	}
-
-	if err := s.DB.Unscoped().Delete(&standup).Error; err != nil {
-		http.Error(w, "Failed to delete standup", http.StatusInternalServerError)
+	if err := s.StandupService.DeleteStandup(uint(standupID)); err != nil {
+		http.Error(w, "Failed to delete", http.StatusInternalServerError)
 		return
 	}
 
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]string{
-		"message": "Standup deleted successfully and team notified!",
-	})
+	json.NewEncoder(w).Encode(map[string]string{"message": "Deleted successfully"})
 }
 
 func (s *Server) HandleGetStandupHistory(w http.ResponseWriter, r *http.Request) {
@@ -301,20 +299,6 @@ func (s *Server) HandleAddStandupMember(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	var standup models.Standup
-	s.DB.First(&standup, reqBody.StandupID)
-
-	dmChannel, err := s.Session.UserChannelCreate(reqBody.UserID)
-	if err == nil {
-		welcomeMsg := fmt.Sprintf(
-			"👋 **You've been added to the '%s' Standup!**\n\n"+
-				"You can now submit your daily reports for this team.\n"+
-				"Run `/start` here or in the server to begin.",
-			standup.Name,
-		)
-		s.Session.ChannelMessageSend(dmChannel.ID, welcomeMsg)
-	}
-
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{"message": "Member added successfully"})
 }
@@ -337,16 +321,6 @@ func (s *Server) HandleRemoveStandupMember(w http.ResponseWriter, r *http.Reques
 	if err := s.StandupService.RemoveMemberFromStandup(reqBody.UserID, reqBody.StandupID); err != nil {
 		http.Error(w, "Failed to remove member", http.StatusInternalServerError)
 		return
-	}
-
-	var standup models.Standup
-	s.DB.First(&standup, reqBody.StandupID)
-
-	dmChannel, err := s.Session.UserChannelCreate(reqBody.UserID)
-	if err == nil {
-		goodbyeMsg := fmt.Sprintf("ℹ️ You have been removed from the **%s** standup team by the manager.",
-			standup.Name)
-		s.Session.ChannelMessageSend(dmChannel.ID, goodbyeMsg)
 	}
 
 	w.WriteHeader(http.StatusOK)

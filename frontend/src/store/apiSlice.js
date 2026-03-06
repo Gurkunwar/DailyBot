@@ -37,8 +37,8 @@ export const asyncFlowApi = createApi({
       providesTags: ["History"],
     }),
     getManagedStandups: builder.query({
-      query: ({ filter, page, limit = 12, search = "" }) =>
-        `managed-standups?filter=${filter}&page=${page}&limit=${limit}&search=${encodeURIComponent(search)}`,
+      query: ({ filter, page, limit = 12, search = "", guild_id = "" }) =>
+        `managed-standups?filter=${filter}&page=${page}&limit=${limit}&search=${encodeURIComponent(search)}&guild_id=${guild_id}`, // 👈 Append it to the URL here
       providesTags: ["ManagedStandups"],
     }),
     getUserGuilds: builder.query({
@@ -84,8 +84,8 @@ export const asyncFlowApi = createApi({
     }),
 
     getManagedPolls: builder.query({
-      query: ({ filter, page, limit = 12, search = "" }) =>
-        `managed-polls?filter=${filter}&page=${page}&limit=${limit}&search=${encodeURIComponent(search)}`,
+      query: ({ filter, page, limit = 12, search = "", guild_id = "" }) =>
+        `managed-polls?filter=${filter}&page=${page}&limit=${limit}&search=${encodeURIComponent(search)}&guild_id=${guild_id}`, // 👈 Append it to the URL here
       providesTags: ["ManagedPolls"],
     }),
     getPollById: builder.query({
