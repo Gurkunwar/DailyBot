@@ -76,7 +76,10 @@ func NewSession() (*discordgo.Session, error) {
 		return nil, err
 	}
 
-	dg.Identify.Intents = discordgo.IntentsGuilds | discordgo.IntentsGuildMessages | discordgo.IntentDirectMessages
+	dg.Identify.Intents = discordgo.IntentsGuilds |
+		discordgo.IntentsGuildMessages |
+		discordgo.IntentDirectMessages |
+		discordgo.IntentGuildMessagePolls
 	return dg, nil
 }
 

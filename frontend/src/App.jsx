@@ -10,6 +10,7 @@ import MyStandups from "./features/standups/MyStandups";
 import ManageStandup from "./features/standups/ManageStandup";
 import MyPolls from "./features/polls/MyPolls";
 import ManagePoll from "./features/polls/ManagePoll";
+import History from "./features/history/History";
 
 function App() {
   return (
@@ -37,6 +38,7 @@ function App() {
         <Route path="/standups/:id" element={<ManageStandup />} />
         <Route path="/polls" element={<MyPolls />} />
         <Route path="/polls/:id" element={<ManagePoll />} />
+        <Route path="/history" element={<History />} />
       </Routes>
     </Router>
   );

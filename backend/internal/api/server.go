@@ -51,6 +51,7 @@ func (s *Server) Routes() {
 	http.HandleFunc("/api/polls/delete", AuthMiddleware(s.HandleDeleteWebPoll))
 	http.HandleFunc("/api/polls/end", AuthMiddleware(s.HandleEndWebPoll))
 	http.HandleFunc("/api/polls/export", AuthMiddleware(s.HandleExportWebPoll))
+	http.HandleFunc("/api/polls/history", AuthMiddleware(s.HandleGetPollHistory))
 }
 
 func (s *Server) Start(port string) {

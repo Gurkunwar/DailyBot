@@ -1,6 +1,10 @@
 package models
 
-import "gorm.io/gorm"
+import (
+	"time"
+
+	"gorm.io/gorm"
+)
 
 type Poll struct {
 	gorm.Model
@@ -25,6 +29,7 @@ type PollVote struct {
 	PollID   uint
 	OptionID uint
 	UserID   string
+	CreatedAt time.Time
 }
 
 type PollState struct {

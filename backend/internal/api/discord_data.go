@@ -36,6 +36,8 @@ type MemberDTO struct {
 type HistoryDTO struct {
 	ID        uint     `json:"id"`
 	UserID    string   `json:"user_id"`
+	UserName  string   `json:"user_name"`
+	Avatar    string   `json:"avatar"`
 	Date      string   `json:"date"`
 	Answers   []string `json:"answers"`
 	CreatedAt string   `json:"created_at"`

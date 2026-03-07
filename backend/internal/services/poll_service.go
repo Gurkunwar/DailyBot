@@ -98,6 +98,91 @@ func (s *PollService) CreatePoll(guildID, channelID, creatorID,
 	return &pollModel, nil
 }
 
+func (s *PollService) HandleVoteAdd(channelID, messageID, userID string, answerID int) error {
+	var poll models.Poll
+	if err := s.DB.Preload("Options").
+		Where("message_id = ? AND channel_id = ?", messageID, channelID).
+		First(&poll).Error; err != nil {
+		return errors.New("poll not found in database")
+	}
+
+	msg, err := s.Session.ChannelMessage(channelID, messageID)
+	if err != nil || msg.Poll == nil {
+		return errors.New("could not fetch live poll to map answer")
+	}
+
+	var selectedLabel string
+	for _, a := range msg.Poll.Answers {
+		if a.AnswerID == answerID {
+			selectedLabel = a.Media.Text
+			break
+		}
+	}
+
+	if selectedLabel == "" {
+		return errors.New("could not find corresponding answer label")
+	}
+
+	var optionID uint
+	for _, opt := range poll.Options {
+		if opt.Label == selectedLabel {
+			optionID = opt.ID
+			break
+		}
+	}
+
+	if optionID == 0 {
+		return errors.New("could not map Discord answer to database option")
+	}
+
+	if err := s.DB.Where("poll_id = ? AND user_id = ?", poll.ID, userID).
+		Delete(&models.PollVote{}).Error; err != nil {
+		log.Printf("Warning: failed to clear previous votes for user %s: %v", userID, err)
+	}
+
+	vote := models.PollVote{
+		PollID:   poll.ID,
+		OptionID: optionID,
+		UserID:   userID,
+	}
+
+	return s.DB.Create(&vote).Error
+}
+
+func (s *PollService) HandleVoteRemove(channelID, messageID, userID string, answerID int) error {
+	var poll models.Poll
+	if err := s.DB.Where("message_id = ? AND channel_id = ?", messageID, channelID).
+		First(&poll).Error; err != nil {
+		return errors.New("poll not found in database")
+	}
+
+	msg, err := s.Session.ChannelMessage(channelID, messageID)
+	if err != nil || msg.Poll == nil {
+		return errors.New("could not fetch live poll to map answer")
+	}
+
+	var selectedLabel string
+	for _, a := range msg.Poll.Answers {
+		if a.AnswerID == answerID {
+			selectedLabel = a.Media.Text
+			break
+		}
+	}
+
+	if selectedLabel == "" {
+		return errors.New("could not find corresponding answer label")
+	}
+
+	var option models.PollOption
+	if err := s.DB.Where("poll_id = ? AND label = ?", poll.ID, selectedLabel).
+		First(&option).Error; err != nil {
+		return errors.New("could not map Discord answer to database option")
+	}
+
+	return s.DB.Where("poll_id = ? AND user_id = ? AND option_id = ?", poll.ID, userID, option.ID).
+		Delete(&models.PollVote{}).Error
+}
+
 func (s *PollService) EndPoll(pollID uint) error {
 	var poll models.Poll
 	if err := s.DB.First(&poll, pollID).Error; err != nil {
@@ -138,28 +223,44 @@ func (s *PollService) DeletePoll(pollID uint) error {
 func (s *PollService) GenerateCSVExport(pollID uint) (string, error) {
 	var poll models.Poll
 	if err := s.DB.First(&poll, pollID).Error; err != nil {
-		return "", errors.New("poll not found")
+		return "", errors.New("poll not found in database")
 	}
 
-	msg, err := s.Session.ChannelMessage(poll.ChannelID, poll.MessageID)
-	if err != nil || msg.Poll == nil {
-		return "", errors.New("could not fetch live poll from Discord")
+	type CSVRow struct {
+		Label    string
+		UserID   string
+		Username string
+	}
+	var results []CSVRow
+
+	err := s.DB.Table("poll_votes").
+		Select("poll_options.label, poll_votes.user_id, user_profiles.username").
+		Joins("JOIN poll_options ON poll_options.id = poll_votes.option_id").
+		Joins("LEFT JOIN user_profiles ON user_profiles.user_id = poll_votes.user_id").
+		Where("poll_votes.poll_id = ?", pollID).
+		Scan(&results).Error
+
+	if err != nil {
+		return "", errors.New("database query failed for csv export")
 	}
 
 	var csvBuilder strings.Builder
 	csvBuilder.WriteString("Option, Discord User ID, Username\n")
 
-	for _, answer := range msg.Poll.Answers {
-		optionText := strings.ReplaceAll(answer.Media.Text, ",", ";")
-		voters, _ := s.Session.PollAnswerVoters(poll.ChannelID, poll.MessageID, answer.AnswerID)
+	if len(results) == 0 {
+		csvBuilder.WriteString("No votes recorded yet.,NONE,NONE\n")
+		return csvBuilder.String(), nil
+	}
 
-		if len(voters) == 0 {
-			csvBuilder.WriteString(fmt.Sprintf("%s,NONE,No votes\n", optionText))
-		} else {
-			for _, voter := range voters {
-				csvBuilder.WriteString(fmt.Sprintf("%s,%s,%s\n", optionText, voter.ID, voter.Username))
-			}
+	for _, row := range results {
+		optionText := strings.ReplaceAll(row.Label, ",", ";")
+
+		name := row.Username
+		if name == "" {
+			name = "Unknown User"
 		}
+
+		csvBuilder.WriteString(fmt.Sprintf("%s,%s,%s\n", optionText, row.UserID, name))
 	}
 
 	return csvBuilder.String(), nil

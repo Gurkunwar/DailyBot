@@ -6,6 +6,7 @@ import (
 	"math"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/Gurkunwar/asyncflow/internal/api/dtos"
 	"github.com/Gurkunwar/asyncflow/internal/models"
@@ -295,4 +296,64 @@ func (s *Server) HandleExportWebPoll(w http.ResponseWriter, r *http.Request) {
     w.Header().Set("Content-Type", "text/csv")
     w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=poll_%s_results.csv", pollIDStr))
     w.Write([]byte(csvData))
+}
+
+func (s *Server) HandleGetPollHistory(w http.ResponseWriter, r *http.Request) {
+	pollID := r.URL.Query().Get("poll_id")
+	if pollID == "" {
+		http.Error(w, "Missing poll_id parameter", http.StatusBadRequest)
+		return
+	}
+
+	type PollVoteResult struct {
+		ID        uint
+		UserID    string
+		Label     string
+		CreatedAt *time.Time
+	}
+	var votes []PollVoteResult
+
+	err := s.DB.Table("poll_votes").
+		Select("poll_votes.id, poll_votes.user_id, poll_options.label, poll_votes.created_at").
+		Joins("JOIN poll_options ON poll_options.id = poll_votes.option_id").
+		Where("poll_votes.poll_id = ?", pollID).
+		Order("poll_votes.created_at desc").
+		Scan(&votes).Error
+
+	if err != nil {
+		http.Error(w, "Failed to fetch poll history from database", http.StatusInternalServerError)
+		return
+	}
+
+	var response []dtos.PollHistoryDTO
+	for _, v := range votes {
+		var profile models.UserProfile
+		s.DB.Where("user_id = ?", v.UserID).First(&profile)
+
+		userName := profile.Username
+		if userName == "" {
+			userName = "User " + v.UserID[len(v.UserID)-4:]
+		}
+
+		timeStr := "Unknown Time"
+		if v.CreatedAt != nil {
+			timeStr = v.CreatedAt.Format("2006-01-02 15:04:05")
+		}
+
+		response = append(response, dtos.PollHistoryDTO{
+			ID:        v.ID,
+			UserID:    v.UserID,
+			UserName:  userName,
+			Avatar:    profile.Avatar,
+			Option:    v.Label,
+			CreatedAt: timeStr,
+		})
+	}
+
+	if response == nil {
+		response = []dtos.PollHistoryDTO{}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
 }

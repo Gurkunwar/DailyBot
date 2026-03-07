@@ -44,6 +44,8 @@ func main() {
 	standupSvc.TriggerFunc = handler.Standups.InitiateStandup
 
 	dg.AddHandler(handler.OnInteraction)
+	dg.AddHandler(handler.Polls.OnVoteAdd)
+    dg.AddHandler(handler.Polls.OnVoteRemove)
 
 	standupSvc.StartTimezoneWorker()
 

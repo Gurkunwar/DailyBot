@@ -121,6 +121,10 @@ export const asyncFlowApi = createApi({
         "ManagedPolls",
       ],
     }),
+    getPollHistory: builder.query({
+      query: (pollId) => `polls/history?poll_id=${pollId}`,
+      providesTags: ["History"],
+    }),
   }),
 });
 
@@ -143,4 +147,5 @@ export const {
   useCreatePollMutation,
   useDeletePollMutation,
   useEndPollMutation,
+  useGetPollHistoryQuery,
 } = asyncFlowApi;

@@ -250,7 +250,7 @@ func (s *Server) HandleGetStandupHistory(w http.ResponseWriter, r *http.Request)
 	var histories []models.StandupHistory
 	if err := s.DB.Where("standup_id = ?", standupID).
 		Order("created_at desc").
-		Limit(50).
+		Limit(100). // Upped the limit a bit for the data table
 		Find(&histories).
 		Error; err != nil {
 
@@ -260,9 +260,20 @@ func (s *Server) HandleGetStandupHistory(w http.ResponseWriter, r *http.Request)
 
 	var response []HistoryDTO
 	for _, h := range histories {
+		
+		var profile models.UserProfile
+		s.DB.Where("user_id = ?", h.UserID).First(&profile)
+
+		userName := profile.Username
+		if userName == "" {
+			userName = "User " + h.UserID[len(h.UserID)-4:]
+		}
+
 		response = append(response, HistoryDTO{
 			ID:        h.ID,
 			UserID:    h.UserID,
+			UserName:  userName,
+			Avatar:    profile.Avatar,
 			Date:      h.Date,
 			Answers:   h.Answers,
 			CreatedAt: h.CreatedAt.Format("2006-01-02 15:04:05"),
