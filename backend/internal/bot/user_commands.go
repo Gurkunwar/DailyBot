@@ -70,39 +70,45 @@ func (h *BotHanlder) handleDeleteMyData(session *discordgo.Session, intr *discor
 }
 
 func (h *BotHanlder) sendTimezoneMenu(session *discordgo.Session, intr *discordgo.InteractionCreate, standupID uint) {
-	userID := utils.ExtractUserID(intr)
+    userID := utils.ExtractUserID(intr)
 
-	state := models.StandupState{
-		UserID:    userID,
-		StandupID: standupID,
-	}
-	store.SaveState(h.Redis, userID, state)
+    state := models.StandupState{
+        UserID:    userID,
+        StandupID: standupID,
+    }
+    store.SaveState(h.Redis, userID, state)
 
-	options := []discordgo.SelectMenuOption{
-		{Label: "India (IST)", Value: "Asia/Kolkata", Description: "UTC+5:30"},
-		{Label: "US East (EST)", Value: "America/New_York", Description: "UTC-5:00"},
-		{Label: "London (GMT)", Value: "Europe/London", Description: "UTC+0:00"},
-		{Label: "Singapore (SGT)", Value: "Asia/Singapore", Description: "UTC+8:00"},
-	}
+    options := []discordgo.SelectMenuOption{
+        {Label: "Universal Time (UTC)", Value: "UTC", Description: "Standard Global Time"},
+        {Label: "US Pacific (PST/PDT)", Value: "America/Los_Angeles", Description: "UTC-8:00 / UTC-7:00"},
+        {Label: "US Central (CST/CDT)", Value: "America/Chicago", Description: "UTC-6:00 / UTC-5:00"},
+        {Label: "US East (EST/EDT)", Value: "America/New_York", Description: "UTC-5:00 / UTC-4:00"},
+        {Label: "London (GMT/BST)", Value: "Europe/London", Description: "UTC+0:00 / UTC+1:00"},
+        {Label: "Europe Central (CET)", Value: "Europe/Paris", Description: "UTC+1:00 / UTC+2:00"},
+        {Label: "India (IST)", Value: "Asia/Kolkata", Description: "UTC+5:30"},
+        {Label: "Singapore (SGT)", Value: "Asia/Singapore", Description: "UTC+8:00"},
+        {Label: "Japan (JST)", Value: "Asia/Tokyo", Description: "UTC+9:00"},
+        {Label: "Australia East (AEST)", Value: "Australia/Sydney", Description: "UTC+10:00 / UTC+11:00"},
+    }
 
-	session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
-		Type: discordgo.InteractionResponseChannelMessageWithSource,
-		Data: &discordgo.InteractionResponseData{
-			Content: "Welcome to **AsyncFlow**! I don't know your timezone yet. Please pick one:",
-			Flags:   discordgo.MessageFlagsEphemeral,
-			Components: []discordgo.MessageComponent{
-				discordgo.ActionsRow{
-					Components: []discordgo.MessageComponent{
-						discordgo.SelectMenu{
-							CustomID:    "select_tz",
-							Placeholder: "Select your local timezone",
-							Options:     options,
-						},
-					},
-				},
-			},
-		},
-	})
+    session.InteractionRespond(intr.Interaction, &discordgo.InteractionResponse{
+        Type: discordgo.InteractionResponseChannelMessageWithSource,
+        Data: &discordgo.InteractionResponseData{
+            Content: "Welcome to **AsyncFlow**! I don't know your timezone yet. Please pick one:",
+            Flags:   discordgo.MessageFlagsEphemeral,
+            Components: []discordgo.MessageComponent{
+                discordgo.ActionsRow{
+                    Components: []discordgo.MessageComponent{
+                        discordgo.SelectMenu{
+                            CustomID:    "select_tz",
+                            Placeholder: "Select your local timezone",
+                            Options:     options,
+                        },
+                    },
+                },
+            },
+        },
+    })
 }
 
 func (h *BotHanlder) handleTimezoneSelection(session *discordgo.Session, intr *discordgo.InteractionCreate) {

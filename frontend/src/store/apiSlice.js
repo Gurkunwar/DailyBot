@@ -125,6 +125,18 @@ export const asyncFlowApi = createApi({
       query: (pollId) => `polls/history?poll_id=${pollId}`,
       providesTags: ["History"],
     }),
+    getUserSettings: builder.query({
+      query: () => `user/settings/get`,
+      providesTags: ["UserSettings"],
+    }),
+    updateUserSettings: builder.mutation({
+      query: (payload) => ({
+        url: `user/settings/update`,
+        method: "POST",
+        body: payload,
+      }),
+      invalidatesTags: ["UserSettings"],
+    }),
   }),
 });
 
@@ -148,4 +160,7 @@ export const {
   useDeletePollMutation,
   useEndPollMutation,
   useGetPollHistoryQuery,
+
+  useGetUserSettingsQuery,
+  useUpdateUserSettingsMutation,
 } = asyncFlowApi;
