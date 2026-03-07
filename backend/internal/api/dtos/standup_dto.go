@@ -7,4 +7,5 @@ type StandupDTO struct {
 	GuildName       string `json:"guild_name"`
 	ChannelName     string `json:"channel_name"`
 	ReportChannelID string `json:"report_channel_id"`
+	CreatorName     string `json:"creator_name"`
 }

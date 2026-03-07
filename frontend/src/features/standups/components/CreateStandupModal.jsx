@@ -17,33 +17,60 @@ const DAYS_OF_WEEK = [
   "Sunday",
 ];
 
+const STANDUP_TEMPLATES = [
+  {
+    id: "daily_scrum",
+    name: "Daily Agile Scrum",
+    questions: [
+      "What did you accomplish yesterday?",
+      "What will you do today?",
+      "Are you stuck anywhere?",
+    ],
+  },
+  {
+    id: "weekly_retro",
+    name: "Weekly Retrospective",
+    questions: [
+      "What went well this week?",
+      "What could have gone better?",
+      "What are our action items for next week?",
+    ],
+  },
+  {
+    id: "mental_health",
+    name: "Mental Health & Workload Check",
+    questions: [
+      "How are you feeling today (1-10)?",
+      "How is your current workload?",
+      "Is there anything blocking you or causing stress?",
+    ],
+  },
+  {
+    id: "custom",
+    name: "Custom (Start from scratch)",
+    questions: [""],
+  },
+];
+
 export default function CreateStandupModal({ isOpen, onClose }) {
   const dropdownRef = useRef(null);
-
-  // Wizard State
   const [currentStep, setCurrentStep] = useState(1);
+  const [selectedTemplate, setSelectedTemplate] = useState("daily_scrum");
 
-  // Form State
   const [formData, setFormData] = useState({
     name: "",
     time: "09:00",
     days: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"],
     guild_id: "",
     report_channel_id: "",
-    questions: [
-      "What did you accomplish yesterday?",
-      "What will you do today?",
-      "Are you stuck anywhere?",
-    ],
+    questions: [...STANDUP_TEMPLATES[0].questions],
   });
 
   const [isChannelDropdownOpen, setIsChannelDropdownOpen] = useState(false);
 
-  // RTK Query Hooks
   const {
     data: guilds = [],
     isLoading: isLoadingGuilds,
-    isError: isGuildError,
   } = useGetUserGuildsQuery(undefined, { skip: !isOpen });
   const { data: channels = [], isFetching: isFetchingChannels } =
     useGetGuildChannelsQuery(formData.guild_id, { skip: !formData.guild_id });
@@ -59,26 +86,36 @@ export default function CreateStandupModal({ isOpen, onClose }) {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // Reset modal when opened/closed
   useEffect(() => {
     if (!isOpen) {
       setCurrentStep(1);
+      setSelectedTemplate("daily_scrum");
       setFormData({
         name: "",
         time: "09:00",
         days: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"],
         guild_id: "",
         report_channel_id: "",
-        questions: [
-          "What did you accomplish yesterday?",
-          "What will you do today?",
-          "Are you stuck anywhere?",
-        ],
+        questions: [...STANDUP_TEMPLATES[0].questions],
       });
     }
   }, [isOpen]);
 
-  // --- Handlers ---
+  const handleTemplateChange = (e) => {
+    const tId = e.target.value;
+    setSelectedTemplate(tId);
+    
+    const template = STANDUP_TEMPLATES.find((t) => t.id === tId);
+    if (template) {
+      setFormData((prev) => ({
+        ...prev,
+        questions: [...template.questions],
+        // UX Bonus: Auto-fill the name if they haven't typed one yet
+        name: prev.name === "" && tId !== "custom" ? template.name : prev.name,
+      }));
+    }
+  };
+
   const handleDayToggle = (day) => {
     setFormData((prev) => {
       const newDays = prev.days.includes(day)
@@ -143,7 +180,7 @@ export default function CreateStandupModal({ isOpen, onClose }) {
       await createStandup({
         ...formData,
         questions: cleanedQuestions,
-        days: formData.days.join(","), // Convert array to string for Go backend
+        days: formData.days.join(","),
       }).unwrap();
       onClose();
     } catch (err) {
@@ -207,12 +244,33 @@ export default function CreateStandupModal({ isOpen, onClose }) {
         {/* RIGHT CONTENT: Form Area */}
         <div className="flex-1 flex flex-col p-6 md:p-8 bg-[#313338]">
           <div className="flex-1">
+            
             {/* STEP 1: BASICS */}
             {currentStep === 1 && (
               <div className="space-y-6 animate-fade-in">
                 <h3 className="text-2xl font-bold text-white mb-2">
                   Let's set up the basics
                 </h3>
+
+                {/* TEMPLATE SELECTOR */}
+                <div className="bg-[#2b2d31] p-4 rounded-lg border border-[#3f4147] shadow-inner mb-6">
+                  <label className="text-[11px] font-extrabold text-[#5865F2] uppercase tracking-wider mb-2 flex 
+                  items-center gap-2">
+                    <span>⚡ Quick Start Template</span>
+                  </label>
+                  <select
+                    value={selectedTemplate}
+                    onChange={handleTemplateChange}
+                    className="w-full bg-[#1e1f22] text-sm text-white px-3 py-2.5 rounded-md outline-none border border-[#1e1f22] focus:border-[#5865F2] cursor-pointer"
+                  >
+                    {STANDUP_TEMPLATES.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
                 <div>
                   <label className="text-[11px] font-extrabold text-[#99AAB5] uppercase tracking-wider mb-2 block">
                     Team Name
@@ -272,7 +330,6 @@ export default function CreateStandupModal({ isOpen, onClose }) {
                             {g.name}
                           </span>
 
-                          {/* The missing Invite Button is back! */}
                           {!g.bot_present && (
                             <button
                               type="button"
@@ -473,7 +530,6 @@ export default function CreateStandupModal({ isOpen, onClose }) {
             )}
           </div>
 
-          {/* FOOTER NAVIGATION */}
           <div className="flex justify-between items-center pt-6 mt-6 border-t border-[#3f4147]">
             <button
               type="button"

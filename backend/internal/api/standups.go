@@ -29,29 +29,29 @@ func (s *Server) HandleGetManagedStandups(dg *discordgo.Session) http.HandlerFun
 		searchQuery := r.URL.Query().Get("search")
 		guildFilter := r.URL.Query().Get("guild_id")
 
-		// 1. PRE-FLIGHT PERMISSION CHECK (Fixes the Admin visibility bug)
-		// Find all unique guild/channel combinations where standups exist
 		var combos []struct {
 			GuildID         string
 			ReportChannelID string
 		}
-		s.DB.Model(&models.Standup{}).Distinct("guild_id", "report_channel_id").Select("guild_id", "report_channel_id").Find(&combos)
+		s.DB.Model(&models.Standup{}).
+			Distinct("guild_id", "report_channel_id").
+			Select("guild_id", "report_channel_id").
+			Find(&combos)
 
 		var adminGuildIDs []string
 		for _, gc := range combos {
 			if gc.ReportChannelID == "" {
 				continue
 			}
-			// Check if THIS specific user has admin rights in this specific channel
 			p, err := s.Session.UserChannelPermissions(managerID, gc.ReportChannelID)
-			if err == nil && (p&discordgo.PermissionAdministrator != 0 || p&discordgo.PermissionManageGuild != 0 || p&discordgo.PermissionManageServer != 0) {
+			if err == nil && (p&discordgo.PermissionAdministrator != 0 ||
+				p&discordgo.PermissionManageGuild != 0) {
 				adminGuildIDs = append(adminGuildIDs, gc.GuildID)
 			}
 		}
 
 		query := s.DB.Model(&models.Standup{}).Order("id desc")
 
-		// 2. APPLY GUILD FILTER AND PERMISSIONS
 		if guildFilter != "" && guildFilter != "All" {
 			query = query.Where("guild_id = ?", guildFilter)
 
@@ -66,18 +66,15 @@ func (s *Server) HandleGetManagedStandups(dg *discordgo.Session) http.HandlerFun
 					}
 				}
 
-				// If they are NOT an admin of this specific server, restrict to only what they created
 				if !isAdminOfSelected {
 					query = query.Where("manager_id = ?", managerID)
 				}
 			}
 		} else {
-			// NO GUILD SELECTED ("All")
 			if onlyMe {
 				query = query.Where("manager_id = ?", managerID)
 			} else {
 				if len(adminGuildIDs) > 0 {
-					// They can see their own standups OR standups in servers they admin
 					query = query.Where(
 						s.DB.Where("manager_id = ?", managerID).Or("guild_id IN ?", adminGuildIDs),
 					)
@@ -103,6 +100,14 @@ func (s *Server) HandleGetManagedStandups(dg *discordgo.Session) http.HandlerFun
 		var response []dtos.StandupDTO
 		for _, st := range allStandups {
 			gName, cName := s.GetDiscordMetadata(st.GuildID, st.ReportChannelID)
+
+			var profile models.UserProfile
+			s.DB.Where("user_id = ?", st.ManagerID).First(&profile)
+			creatorName := profile.Username
+			if creatorName == "" {
+				creatorName = "User " + st.ManagerID[len(st.ManagerID)-4:]
+			}
+
 			response = append(response, dtos.StandupDTO{
 				ID:              st.ID,
 				Name:            st.Name,
@@ -110,6 +115,7 @@ func (s *Server) HandleGetManagedStandups(dg *discordgo.Session) http.HandlerFun
 				GuildName:       gName,
 				ChannelName:     cName,
 				ReportChannelID: st.ReportChannelID,
+				CreatorName:     creatorName,
 			})
 		}
 		if response == nil {
@@ -129,49 +135,49 @@ func (s *Server) HandleGetManagedStandups(dg *discordgo.Session) http.HandlerFun
 }
 
 func (s *Server) HandleCreateStandup(w http.ResponseWriter, r *http.Request) {
-    if r.Method != http.MethodPost {
-        http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-        return
-    }
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
 
-    var payload struct {
-        Name            string   `json:"name"`
-        Time            string   `json:"time"`
-        Days            string   `json:"days"`
-        GuildID         string   `json:"guild_id"`
-        ReportChannelID string   `json:"report_channel_id"`
-        Questions       []string `json:"questions"`
-    }
+	var payload struct {
+		Name            string   `json:"name"`
+		Time            string   `json:"time"`
+		Days            string   `json:"days"`
+		GuildID         string   `json:"guild_id"`
+		ReportChannelID string   `json:"report_channel_id"`
+		Questions       []string `json:"questions"`
+	}
 
-    if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-        http.Error(w, "Invalid request payload", http.StatusBadRequest)
-        return
-    }
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		http.Error(w, "Invalid request payload", http.StatusBadRequest)
+		return
+	}
 
-    managerID := r.Context().Value(UserIDKey).(string)
+	managerID := r.Context().Value(UserIDKey).(string)
 
-    standup := models.Standup{
-        Name:            payload.Name,
-        Time:            payload.Time,
-        Days:            payload.Days,
-        GuildID:         payload.GuildID,
-        ReportChannelID: payload.ReportChannelID,
-        ManagerID:       managerID,
-        Questions:       payload.Questions,
-    }
+	standup := models.Standup{
+		Name:            payload.Name,
+		Time:            payload.Time,
+		Days:            payload.Days,
+		GuildID:         payload.GuildID,
+		ReportChannelID: payload.ReportChannelID,
+		ManagerID:       managerID,
+		Questions:       payload.Questions,
+	}
 
-    createdStandup, err := s.StandupService.CreateStandup(standup)
-    if err != nil {
-        http.Error(w, err.Error(), http.StatusInternalServerError)
-        return
-    }
+	createdStandup, err := s.StandupService.CreateStandup(standup)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 
-    s.StandupService.AddMemberToStandup(managerID, createdStandup.ID)
+	s.StandupService.AddMemberToStandup(managerID, createdStandup.ID)
 
-    w.WriteHeader(http.StatusCreated)
-    json.NewEncoder(w).Encode(map[string]string{
-        "message": "Standup created successfully!",
-    })
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(map[string]string{
+		"message": "Standup created successfully!",
+	})
 }
 
 func (s *Server) HandleUpdateStandup(w http.ResponseWriter, r *http.Request) {
@@ -260,7 +266,7 @@ func (s *Server) HandleGetStandupHistory(w http.ResponseWriter, r *http.Request)
 
 	var response []HistoryDTO
 	for _, h := range histories {
-		
+
 		var profile models.UserProfile
 		s.DB.Where("user_id = ?", h.UserID).First(&profile)
 

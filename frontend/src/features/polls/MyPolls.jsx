@@ -118,10 +118,22 @@ export default function MyPolls() {
                     </button>
                     <div className="flex justify-between items-start mb-1 pr-8">
                       <div>
-                        <h3 className="text-xl font-bold group-hover:text-[#5865F2] transition-colors line-clamp-2">{p.question}</h3>
-                        <p className="text-[10px] text-[#5865F2] font-bold uppercase tracking-widest mb-4 mt-1">{p.guild_name}</p>
+                        <h3 className="text-xl font-bold group-hover:text-[#5865F2] transition-colors line-clamp-2">
+                          {p.question}
+                        </h3>
+                        <div className="flex items-center gap-2 mt-1 mb-4">
+                          <span className="text-[10px] text-[#5865F2] font-bold uppercase tracking-widest">
+                            {p.guild_name}
+                          </span>
+                          <span className="text-[#404249]">•</span>
+                          <span className="text-[10px] text-[#99AAB5] uppercase tracking-widest truncate max-w-30">
+                            By {p.creator_name || "Unknown"}
+                          </span>
+                        </div>
                       </div>
-                      <span className="text-[10px] bg-[#232428] px-2 py-1 rounded text-[#99AAB5] font-mono shrink-0 ml-2">ID: {p.id}</span>
+                      <span className="text-[10px] bg-[#232428] px-2 py-1 rounded text-[#99AAB5] font-mono shrink-0 ml-2">
+                        ID: {p.id}
+                      </span>
                     </div>
                     <div className="space-y-3 text-sm pt-4 border-t border-[#3f4147]">
                       <div className="flex items-center justify-between">

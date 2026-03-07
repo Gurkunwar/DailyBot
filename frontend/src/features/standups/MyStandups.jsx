@@ -1,5 +1,3 @@
-// src/features/standups/MyStandups.jsx
-
 import React, { useState, useEffect } from "react";
 import Sidebar from "../../components/Sidebar";
 import CreateStandupModal from "./components/CreateStandupModal";
@@ -80,7 +78,8 @@ export default function MyStandups() {
             <h2 className="text-2xl font-bold">Managed Standups</h2>
             <button
               onClick={() => setIsModalOpen(true)}
-              className="bg-[#5865F2] hover:bg-[#4752C4] px-4 py-2 rounded font-semibold text-sm transition-colors cursor-pointer shadow-md"
+              className="bg-[#5865F2] hover:bg-[#4752C4] px-4 py-2 rounded font-semibold 
+              text-sm transition-colors cursor-pointer shadow-md"
             >
               + New Standup
             </button>
@@ -91,13 +90,19 @@ export default function MyStandups() {
               <div className="flex items-center gap-2 bg-[#1e1f22] p-1 rounded-lg border border-[#3f4147]">
                 <button
                   onClick={() => handleTabChange(false)}
-                  className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${!showOnlyMine ? "bg-[#5865F2] text-white shadow-sm" : "text-[#99AAB5] hover:text-white"}`}
+                  className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all 
+                    ${
+                      !showOnlyMine
+                        ? "bg-[#5865F2] text-white shadow-sm"
+                        : "text-[#99AAB5] hover:text-white"
+                    }`}
                 >
                   All
                 </button>
                 <button
                   onClick={() => handleTabChange(true)}
-                  className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${showOnlyMine ? "bg-[#5865F2] text-white shadow-sm" : "text-[#99AAB5] hover:text-white"}`}
+                  className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all 
+                    ${showOnlyMine ? "bg-[#5865F2] text-white shadow-sm" : "text-[#99AAB5] hover:text-white"}`}
                 >
                   Created by me
                 </button>
@@ -111,7 +116,8 @@ export default function MyStandups() {
                     setSelectedGuild(e.target.value);
                     setPage(1);
                   }}
-                  className="bg-[#1e1f22] text-sm text-white px-3 py-2 rounded-md outline-none border border-[#3f4147] focus:border-[#5865F2] cursor-pointer"
+                  className="bg-[#1e1f22] text-sm text-white px-3 py-2 rounded-md outline-none 
+                  border border-[#3f4147] focus:border-[#5865F2] cursor-pointer"
                 >
                   <option value="All">All Servers</option>
                   {guilds.map((guild) => (
@@ -144,7 +150,9 @@ export default function MyStandups() {
                 placeholder="Search standups by name..."
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
-                className="w-full bg-[#1e1f22] text-sm text-white pl-9 pr-3 py-2 rounded-md outline-none border border-[#3f4147] focus:border-[#5865F2] transition-colors placeholder-[#99AAB5]"
+                className="w-full bg-[#1e1f22] text-sm text-white pl-9 pr-3 py-2 rounded-md 
+                outline-none border border-[#3f4147] focus:border-[#5865F2] transition-colors 
+                placeholder-[#99AAB5]"
               />
             </div>
           </div>
@@ -156,17 +164,20 @@ export default function MyStandups() {
           ) : (
             <>
               <div
-                className={`grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 transition-opacity duration-200 ${isFetching ? "opacity-50" : "opacity-100"}`}
+                className={`grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 transition-opacity 
+                  duration-200 ${isFetching ? "opacity-50" : "opacity-100"}`}
               >
                 {standups.map((s) => (
                   <div
                     key={s.id}
                     onClick={() => navigate(`/standups/${s.id}`)}
-                    className="bg-[#2b2d31] p-6 rounded-xl border border-[#1e1f22] hover:border-[#5865F2] transition-all cursor-pointer group shadow-lg relative"
+                    className="bg-[#2b2d31] p-6 rounded-xl border border-[#1e1f22] 
+                    hover:border-[#5865F2] transition-all cursor-pointer group shadow-lg relative"
                   >
                     <button
                       onClick={(e) => handleDelete(e, s.id)}
-                      className="absolute top-4 right-4 text-[#404249] hover:text-[#da373c] hover:bg-[#da373c]/10 p-2 rounded-md transition-all opacity-0 group-hover:opacity-100"
+                      className="absolute top-4 right-4 text-[#404249] hover:text-[#da373c] 
+                      hover:bg-[#da373c]/10 p-2 rounded-md transition-all opacity-0 group-hover:opacity-100"
                       title="Delete Standup"
                     >
                       <svg
@@ -188,9 +199,15 @@ export default function MyStandups() {
                         <h3 className="text-xl font-bold group-hover:text-[#5865F2] transition-colors line-clamp-2">
                           {s.name}
                         </h3>
-                        <p className="text-[10px] text-[#5865F2] font-bold uppercase tracking-widest mb-4 mt-1">
-                          {s.guild_name}
-                        </p>
+                        <div className="flex items-center gap-2 mt-1 mb-4">
+                          <span className="text-[10px] text-[#5865F2] font-bold uppercase tracking-widest">
+                            {s.guild_name}
+                          </span>
+                          <span className="text-[#404249]">•</span>
+                          <span className="text-[10px] text-[#99AAB5] uppercase tracking-widest truncate max-w-30">
+                            By {s.creator_name || "Unknown"}
+                          </span>
+                        </div>
                       </div>
                       <span className="text-[10px] bg-[#232428] px-2 py-1 rounded text-[#99AAB5] font-mono shrink-0 ml-2">
                         ID: {s.id}
@@ -214,7 +231,10 @@ export default function MyStandups() {
                 ))}
 
                 {standups.length === 0 && (
-                  <div className="col-span-full py-20 text-center bg-[#2b2d31] rounded-xl border-2 border-dashed border-[#404249]">
+                  <div
+                    className="col-span-full py-20 text-center bg-[#2b2d31] rounded-xl 
+                  border-2 border-dashed border-[#404249]"
+                  >
                     <p className="text-[#99AAB5] mb-2 text-4xl">🔍</p>
                     <p className="text-[#99AAB5]">
                       No standups match your search or filters.
@@ -228,17 +248,24 @@ export default function MyStandups() {
                   <button
                     disabled={page === 1}
                     onClick={() => setPage((p) => p - 1)}
-                    className="px-4 py-2 bg-[#2b2d31] border border-[#3f4147] rounded-md font-semibold text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-[#35373c] transition-colors"
+                    className="px-4 py-2 bg-[#2b2d31] border border-[#3f4147] rounded-md 
+                    font-semibold text-sm disabled:opacity-50 disabled:cursor-not-allowed 
+                    hover:bg-[#35373c] transition-colors"
                   >
                     ← Previous
                   </button>
-                  <span className="text-[#99AAB5] text-sm font-bold bg-[#1e1f22] px-4 py-2 rounded-md border border-[#3f4147]">
+                  <span
+                    className="text-[#99AAB5] text-sm font-bold bg-[#1e1f22] px-4 py-2 
+                  rounded-md border border-[#3f4147]"
+                  >
                     Page {page} of {totalPages}
                   </span>
                   <button
                     disabled={page === totalPages}
                     onClick={() => setPage((p) => p + 1)}
-                    className="px-4 py-2 bg-[#2b2d31] border border-[#3f4147] rounded-md font-semibold text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-[#35373c] transition-colors"
+                    className="px-4 py-2 bg-[#2b2d31] border border-[#3f4147] rounded-md 
+                    font-semibold text-sm disabled:opacity-50 disabled:cursor-not-allowed 
+                    hover:bg-[#35373c] transition-colors"
                   >
                     Next →
                   </button>

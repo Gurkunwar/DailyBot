@@ -6,4 +6,5 @@ type PollDTO struct {
 	GuildName   string `json:"guild_name"`
 	ChannelName string `json:"channel_name"`
 	IsActive    bool   `json:"is_active"`
+	CreatorName string `json:"creator_name"`
 }
